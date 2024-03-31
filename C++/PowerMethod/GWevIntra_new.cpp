@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
 		xx = (double *) malloc(m*sizeof(double));
 		p=0;
                 for (q=0; q<m; q++) {
-                        if (!isnan((double) records[q].counts)) {
+                        if (!std::isnan((double) records[q].counts)) {
                 		ii[p] = records[q].binX/binsize;
                         	jj[p] = records[q].binY/binsize;
                         	xx[p] = (double) records[q].counts;
@@ -194,7 +194,7 @@ int main(int argc, char *argv[]) {
 		if (100000 % binsize == 0) int junk = flipSign(genome1,ev,N,chr1,binsize);
                 for (int j=0;j< N;j++) {
 			if (j == N-1) fprintf(fout,"fixedStep chrom=%s start=%d step=%ld span=%ld\n",chr1,j*binsize+1,itr->second.length % binsize, itr->second.length % binsize );
-			if (!isnan(ev[j])) fprintf(fout,"%f\n",ev[j]);
+			if (!std::isnan(ev[j])) fprintf(fout,"%f\n",ev[j]);
 			else fprintf(fout,"%s\n","0");
 //			else fprintf(fout,"%s\n","NaN");
 		}

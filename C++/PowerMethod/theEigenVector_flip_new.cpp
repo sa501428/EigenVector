@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
 				ii[k] = records[k].binX/binsize; 
 				jj[k] = records[k].binY/binsize; 
 				xx[k] = (double) records[k].counts;
-				if (isnan(xx[k])) xx[k] = 0;
+				if (std::isnan(xx[k])) xx[k] = 0;
 	}
 	clock_gettime(CLOCK_REALTIME,&t1);
 	if (verb) printf("took %10.3f seconds for %ld records\n",((double) (t1.tv_sec - t0.tv_sec)) + ((double) (t1.tv_nsec - t0.tv_nsec))/1e9,nonZer);
@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
         if (strcmp(chr1,"chrY")!=0 && strcmp(chr1,"chrM")!=0 && (100000 % binsize == 0)) int junk = flipSign(genome1,ev,N,chr1,binsize);
 
 	for (int j=0;j<N;j++) {
-		if (!isnan(ev[j])) fprintf(fout,"%20.10f\n",ev[j]);
+		if (!std::isnan(ev[j])) fprintf(fout,"%20.10f\n",ev[j]);
 		else fprintf(fout,"%20s\n","NaN");
 	}
 	fclose(fout);
