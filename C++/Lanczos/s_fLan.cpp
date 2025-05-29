@@ -11,18 +11,26 @@ using namespace std;
 
 int SOLan(long m,unsigned int *i,unsigned int *j,float *x,unsigned int *N,double *r,int nv,double *lam,double **ev,double *er,double tol,double eps,int maxiter,int threads);
 
-map<string, chromosome> readHeader(istream &fin, long &masterIndexPosition, string &genomeID, int &numChromosomes, int &version, long &nviPosition, long &nviLength);
-
 int flipSign(const char *genome, double *x, int n, char *chr, int binsize);
 
 static void usage(const char *argv0)
 {
-  fprintf(stderr, "Usage: %s [-o (observed)][-t tol][-e eps][-I max_iterations][-n normalization][-T threads][-v verbose] <hicfile> <chromosome> <outbase> <resolution> <[nv]>\n", argv0);
-  fprintf(stderr, "  <hicfile>: hic file\n");
-  fprintf(stderr, "  <chromosome>: chromosomee\n");
-  fprintf(stderr, "  <outbase>: Eigenvectors output base name\n");
-  fprintf(stderr, "  <resolution>: resolution in bp\n");
-  fprintf(stderr, "  <number of eigenvectors>: optional; default is 2\n");
+  fprintf(stderr, "Usage: %s [options] <hicfile> <chromosome> <outbase> <resolution> [nv]\n\n", argv0);
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "  -o           Use observed matrix instead of observed/expected (o/e) matrix\n");
+  fprintf(stderr, "  -t <float>   Set tolerance (default: 1.0e-7)\n");
+  fprintf(stderr, "  -e <float>   Set epsilon (default: 1.0e-8)\n");
+  fprintf(stderr, "  -I <int>     Set maximum iterations (default: 200)\n");
+  fprintf(stderr, "  -n <string>  Set normalization method (default: NONE)\n");
+  fprintf(stderr, "  -T <int>     Set number of threads (default: 1)\n");
+  fprintf(stderr, "  -v <int>     Set verbosity level (default: 1)\n");
+  fprintf(stderr, "  -h           Show this help message\n\n");
+  fprintf(stderr, "Required arguments:\n");
+  fprintf(stderr, "  <hicfile>     Path to .hic file\n");
+  fprintf(stderr, "  <chromosome>  Chromosome name (e.g., chr1)\n");
+  fprintf(stderr, "  <outbase>     Base name for output eigenvector files\n");
+  fprintf(stderr, "  <resolution>  Resolution in base pairs\n");
+  fprintf(stderr, "  [nv]         Number of eigenvectors (optional, default: 2)\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -96,14 +104,14 @@ int main(int argc, char *argv[]) {
 	printf("\n");
 
 // chromosome map for finding matrix
-    long master = 0L;
+    int64_t master = 0LL;
     map<string, chromosome> chromosomeMap;
     string genomeID;
-    int numChromosomes = 0;
-    int version = 0;
-    long nviPosition = 0;
-    long nviLength = 0;
-    long totalFileSize;
+    int32_t numChromosomes = 0;
+    int32_t version = 0;
+    int64_t nviPosition = 0LL;
+    int64_t nviLength = 0LL;
+    int64_t totalFileSize;
 
 	chromosomeMap = readHeader(fin, master, genomeID, numChromosomes, version, nviPosition, nviLength);
 	map<string,chromosome>::iterator itr0 = chromosomeMap.find(chrom);
@@ -179,7 +187,7 @@ int main(int argc, char *argv[]) {
 	for (int j0=0;j0<nv+2;j0++) {
 		char *curout = (char *) malloc((10+strlen(out_name))*sizeof(char));
 		char *temp = (char *) malloc(50);
-		sprintf(temp,".Ev%d",j0+1);
+		snprintf(temp, 50, ".Ev%d", j0+1);
 		strcpy(curout,out_name);
 		strcat(curout,temp);
 		FILE *fout = fopen(curout,"w");

@@ -13,15 +13,15 @@ unsigned int getMatrix(string fname, int binsize, string norm, string ob, bool i
 	string unit("BP");
 	ifstream fin;
 
-    long master = 0L;
+    int64_t master = 0LL;
     map<string, chromosome> chromosomeMap;
     string genomeID;
-    int version = 0;
-    long nviPosition = 0;
-    long nviLength = 0;
-    long totalFileSize;
+    int32_t nChrs = 0;
+    int32_t version = 0;
+    int64_t nviPosition = 0LL;
+    int64_t nviLength = 0LL;
+    int64_t totalFileSize;
 
-	int nChrs;
 	vector<std::string> chroms;
 	vector<int> chrLen;
 	fin.open(fname, fstream::in);

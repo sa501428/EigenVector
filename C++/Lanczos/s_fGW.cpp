@@ -15,11 +15,22 @@ unsigned int getMatrix(string fname, int binsize, string norm, string ob, bool i
 
 static void usage(const char *argv0)
 {
-  fprintf(stderr, "Usage: %s [-f (for full matrix)][-t tol][-e eps][-I max_iterations][-T threads][-v verbose] <hicfile> <outbase> <resolution> <[nv]>\n", argv0);
-  fprintf(stderr, "  <hicfile>: hic file\n");
-  fprintf(stderr, "  <outbase>: Eigenvector base name\n");
-  fprintf(stderr, "  <resolution>: resolution in bp\n");
-  fprintf(stderr, "  <number of eigenvectors>: optional; default is 2\n");
+  fprintf(stderr, "Usage: %s [options] <hicfile> <outbase> <resolution> [nv]\n\n", argv0);
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "  -f           Use full matrix instead of inter-chromosomal only\n");
+  fprintf(stderr, "  -t <float>   Set tolerance (default: 1.0e-7)\n");
+  fprintf(stderr, "  -e <float>   Set epsilon (default: 1.0e-8)\n");
+  fprintf(stderr, "  -I <int>     Set maximum iterations (default: 200)\n");
+  fprintf(stderr, "  -T <int>     Set number of threads (default: 1)\n");
+  fprintf(stderr, "  -v <int>     Set verbosity level (default: 1)\n");
+  fprintf(stderr, "  -h           Show this help message\n\n");
+  fprintf(stderr, "Required arguments:\n");
+  fprintf(stderr, "  <hicfile>    Path to .hic file\n");
+  fprintf(stderr, "  <outbase>    Base name for output eigenvector files\n");
+  fprintf(stderr, "  <resolution> Resolution in base pairs\n");
+  fprintf(stderr, "  [nv]        Number of eigenvectors (optional, default: 2)\n\n");
+  fprintf(stderr, "Output:\n");
+  fprintf(stderr, "  Creates .wig files for each eigenvector with the naming pattern: <outbase>_Ev<n>.wig\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -125,7 +136,7 @@ int main(int argc, char *argv[]) {
         for (int j0=0;j0<nv+2;j0++) {
                 char *curout = (char *) malloc((10+strlen(out_name))*sizeof(char));
                 char *temp = (char *) malloc(50);
-                sprintf(temp,"_Ev%d",j0+1);
+                snprintf(temp, 50, "_Ev%d", j0+1);
                 strcpy(curout,out_name);
                 strcat(curout,temp);
                 strcat(curout,".wig");

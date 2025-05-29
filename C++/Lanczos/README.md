@@ -1,28 +1,79 @@
-**Lanczos Method with Selective Ortohanalization**  
+**Lanczos Method with Selective Orthogonalization**  
 
-These functions need liblapacke (and hence libblas and liblapack). To install them do:  
-sudo apt update  
-sudo apt install libopenblas-base  
-sudo apt install libopenblas-dev  
-sudo apt install liblapack3  
-sudo apt install liblapack-dev  
-sudo apt install liblapacke-dev  
+This package provides tools for computing leading eigenvectors of contact matrices from Hi-C data.
 
-Then make sure that you are using version 7 of gcc and g++  
+## Building the Software
 
-**Rmark:** In my case the folder containing **straw** is **~/HiC/straw_may_2022**. The user should replace it by their own folder.
+### Prerequisites
 
-To create an executable for computing few leading eigenvectors of the correlation matrix of contact matrix for a particular chromosome do:  
-**g++ -O2 -o Lan.exe s_fLan.cpp s_fSOLan.c s_dthMul.c hgFlipSign.c ~/HiC/straw_may_2022/C++/straw.cpp -I. -I ~/HiC/straw_may_2022/C++ -lz -lcurl -lpthread -lblas -llapack -llapacke**  
-Run  
-./Lan.exe  
-to see usage.  
-By default it uses unnormalized observed over expected (o/e) matrix.  
-Use -o flag to use observed matrix instead (usually not recommended)  
-Use -n norm to use normalized matrix; norm can be NONE (no normalization - default), VC, VC_SQRT, KR, SCALE, SCALA, etc.  
+The software requires:
+- C++ compiler (GCC/G++ 4.8 or later)
+- OpenBLAS
+- LAPACK/LAPACKE
+- libcurl
+- zlib
+- straw library (place in `~/straw` or modify build script)
 
-To do the above for Genome Wide (GW) contact matrix do:  
-**g++ -O2 -o GWev.exe s_fGW.cpp getGWMatrix.cpp s_fSOLan.c s_dthMul.c ~/HiC/straw_may_2022/C++/straw.cpp -I ~/HiC/straw_may_2022/C++ -lz -lcurl -lpthread -lblas -llapack -llapacke**  
-Run  
-./GWev.exe for usage.  
-By default it uses **inter**chromosomal matrix. To use the full matrix specife the -f flag
+### Platform-Specific Build Instructions
+
+#### Linux
+```bash
+# Make the script executable
+chmod +x build_linux.sh
+# Run the build script
+./build_linux.sh
+```
+
+The script will automatically install required dependencies using apt-get.
+
+#### macOS
+```bash
+# Make the script executable
+chmod +x build_mac.sh
+# Run the build script
+./build_mac.sh
+```
+
+The script will use Homebrew to install required dependencies.
+
+#### Windows
+1. Install MinGW-w64 from [WinLibs](https://winlibs.com/)
+2. Add MinGW-w64 bin directory to your PATH
+3. Run the build script:
+```cmd
+build_windows.bat
+```
+
+You may need to modify the paths in `build_windows.bat` to match your MinGW-w64 installation.
+
+## Usage
+
+### Chromosome-Specific Analysis (Lan.exe)
+```bash
+./Lan.exe [options] <hicfile> <chromosome> <outbase> <resolution> [nv]
+
+Options:
+  -o           Use observed matrix instead of observed/expected (o/e) matrix
+  -t <float>   Set tolerance (default: 1.0e-7)
+  -e <float>   Set epsilon (default: 1.0e-8)
+  -I <int>     Set maximum iterations (default: 200)
+  -n <string>  Set normalization method (default: NONE)
+  -T <int>     Set number of threads (default: 1)
+  -v <int>     Set verbosity level (default: 1)
+```
+
+### Genome-Wide Analysis (GWev.exe)
+```bash
+./GWev.exe [options] <hicfile> <outbase> <resolution> [nv]
+
+Options:
+  -f           Use full matrix instead of inter-chromosomal only
+  -t <float>   Set tolerance (default: 1.0e-7)
+  -e <float>   Set epsilon (default: 1.0e-8)
+  -I <int>     Set maximum iterations (default: 200)
+  -T <int>     Set number of threads (default: 1)
+  -v <int>     Set verbosity level (default: 1)
+```
+
+## Output Format
+The programs generate eigenvector files in WIG format that can be visualized in genome browsers.
