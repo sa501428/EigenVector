@@ -187,7 +187,7 @@ int main(int argc, char *argv[]) {
 	for (int j0=0;j0<nv+2;j0++) {
 		char *curout = (char *) malloc((10+strlen(out_name))*sizeof(char));
 		char *temp = (char *) malloc(50);
-		snprintf(temp, 50, ".Ev%d", j0+1);
+		snprintf(temp, 50, ".Ev%d.wig", j0+1);
 		strcpy(curout,out_name);
 		strcat(curout,temp);
 		FILE *fout = fopen(curout,"w");
@@ -196,12 +196,32 @@ int main(int argc, char *argv[]) {
 			exit(EXIT_FAILURE);
 		}
 
-		for (p=0;p<N;p++) {
-			if (!isnan(ev[j0][p])) fprintf(fout,"%lg\n",ev[j0][p]);
-			else fprintf(fout,"%s\n","NaN");
-		}
-		fprintf(fout,"\n");
+                // Write track header
+                fprintf(fout, "track type=wiggle_0 name=\"Eigenvector %d\" description=\"Eigenvector %d for %s\"\n", 
+                        j0+1, j0+1, chrom.c_str());
+
+                // Convert chromosome name to standard format
+                char *chr = const_cast<char*> (chrom.c_str());
+                char *chr1 = (char *) malloc((strlen(chr)+4)*sizeof(char));
+                if (!strstr(chr,"chr")) strcpy(chr1,"chr");
+                else strcpy(chr1,"");
+                strcat(chr1,chr);
+                if (strcmp(chr1,"chrMT") == 0) strcpy(chr1,"chrM");
+
+                // Write all bins with uniform size
+                fprintf(fout, "fixedStep chrom=%s start=1 step=%d span=%d\n", chr1, binsize, binsize);
+                for (p=0; p<N; p++) {
+                        if (!isnan(ev[j0][p])) {
+                                fprintf(fout,"%lg\n", ev[j0][p]);
+                        } else {
+                                fprintf(fout,"0\n");
+                        }
+                }
+
+                free(chr1);
 		fclose(fout);
+		free(curout);
+		free(temp);
 	}
 	return(iter);
 }

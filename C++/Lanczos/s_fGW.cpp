@@ -146,29 +146,34 @@ int main(int argc, char *argv[]) {
                         exit(EXIT_FAILURE);
                 }
 
-        	fprintf(fout,"track type=wiggle_0\n");
-        	int a = 0;
-        	for (int b=0; b<chroms.size(); b++) {
-                	fprintf(fout,"fixedStep ");
-                	char *chr = const_cast<char*> (chroms.at(b).c_str());
-                	char *chr1 = (char *) malloc((strlen(chr)+4)*sizeof(char));
-                	if (!strstr(chr,"chr")) strcpy(chr1,"chr");
-                	else strcpy(chr1,"");
-                	strcat(chr1,chr);
-                	if (strcmp(chr1,"chrMT") == 0)  strcpy(chr1,"chrM");
-                	fprintf(fout,"chrom=%s ",chr1);
-                	fprintf(fout,"start=1 step=%d span=%d\n",binsize,binsize);
-                	for (int c=0;c< ((int) ceil(chrLen.at(b)/((double) binsize)));c++) {
-                        	if (c == ((int) ceil(chrLen.at(b)/((double) binsize))) - 1) fprintf(fout,"fixedStep chrom=%s start=%d step=%d span=%d\n",chr1,c*binsize+1,chrLen.at(b) % binsize, chrLen.at(b) % binsize );
-                        	if (!std::isnan(ev[j0][a])) fprintf(fout,"%lg\n",ev[j0][a++]);
-                        	else {
-                                	fprintf(fout,"%s\n","0");
-                                	a++;
-                        	}
-                	}
-        	}
+                fprintf(fout, "track type=wiggle_0 name=\"Eigenvector %d\" description=\"Eigenvector %d from genome-wide analysis\"\n", j0+1, j0+1);
+                int a = 0;
+                for (int b=0; b<chroms.size(); b++) {
+                        char *chr = const_cast<char*> (chroms.at(b).c_str());
+                        char *chr1 = (char *) malloc((strlen(chr)+4)*sizeof(char));
+                        if (!strstr(chr,"chr")) strcpy(chr1,"chr");
+                        else strcpy(chr1,"");
+                        strcat(chr1,chr);
+                        if (strcmp(chr1,"chrMT") == 0) strcpy(chr1,"chrM");
 
+                        // Calculate number of bins for this chromosome
+                        int numBins = (int) ceil(chrLen.at(b)/((double) binsize));
+
+                        // Write all bins with uniform size
+                        fprintf(fout, "fixedStep chrom=%s start=1 step=%d span=%d\n", chr1, binsize, binsize);
+                        for (int c=0; c<numBins; c++) {
+                                if (!std::isnan(ev[j0][a])) {
+                                        fprintf(fout,"%lg\n", ev[j0][a]);
+                                } else {
+                                        fprintf(fout,"0\n");
+                                }
+                                a++;
+                        }
+                        free(chr1);
+                }
                 fclose(fout);
+                free(curout);
+                free(temp);
         }
         return(iter);
 }
