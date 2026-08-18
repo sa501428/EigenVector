@@ -22,6 +22,8 @@ static void usage(const char *argv0)
   fprintf(stderr, "  -e <float>   Set epsilon (default: 1.0e-8)\n");
   fprintf(stderr, "  -I <int>     Set maximum iterations (default: 200)\n");
   fprintf(stderr, "  -n <string>  Set normalization method (default: SCALE)\n");
+  fprintf(stderr, "  -c <float>   Filter bins below this log1p(nonzero-count) z-score (default: -2.5)\n");
+  fprintf(stderr, "  -C           Disable low-coverage row/column filtering\n");
   fprintf(stderr, "  -T <int>     Set number of threads (default: 1)\n");
   fprintf(stderr, "  -v <int>     Set verbosity level (default: 1)\n");
   fprintf(stderr, "  -h           Show this help message\n\n");
@@ -45,10 +47,12 @@ int main(int argc, char *argv[]) {
 	int maxiter=200;
 	int threads = 1;
 	int verb = 1;
+	double coverageZCutoff = -2.5;
+	bool coverageFilter = true;
 	unsigned int N;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "ot:e:I:T:n:v:h")) != -1) {
+	while ((opt = getopt(argc, argv, "ot:e:I:T:n:c:Cv:h")) != -1) {
 		switch (opt) {
 				case 'o':
 					ob = "observed";
@@ -64,6 +68,13 @@ int main(int argc, char *argv[]) {
 					break;
 				case 'n':
 					norm=optarg;
+					break;
+				case 'c':
+					coverageZCutoff=atof(optarg);
+					coverageFilter=true;
+					break;
+				case 'C':
+					coverageFilter=false;
 					break;
 				case 'T':
 					threads=atoi(optarg);
@@ -115,8 +126,6 @@ int main(int argc, char *argv[]) {
     int32_t version = 0;
     int64_t nviPosition = 0LL;
     int64_t nviLength = 0LL;
-    int64_t totalFileSize;
-
 	chromosomeMap = readHeader(fin, master, genomeID, numChromosomes, version, nviPosition, nviLength);
 	map<string,chromosome>::iterator itr0 = chromosomeMap.find(chrom);
 	if (itr0 != chromosomeMap.end()) N = (int) ceil(itr0->second.length/((double) binsize));
@@ -135,15 +144,62 @@ int main(int argc, char *argv[]) {
 
 	time(&t0);
 	vector<contactRecord> records = straw(ob, norm, fname, chrom, chrom, unit, binsize);
-	long nonZer = records.size();
-	unsigned int *i = (unsigned int *) malloc(nonZer*sizeof(int));
-	unsigned int *j = (unsigned int *) malloc(nonZer*sizeof(int));
-	float *x = (float *) malloc(nonZer*sizeof(float));
-	for (long k=0; k<nonZer; k++) {
-				i[k] = records[k].binX/binsize; 
-				j[k] = records[k].binY/binsize; 
-				x[k] = (float) records[k].counts;
-				if (isnan(x[k])) x[k] = 0;
+	long inputNonZero = records.size();
+	vector<unsigned int> rowNonZero(N, 0);
+	for (long k=0; k<inputNonZero; k++) {
+		unsigned int row = records[k].binX/binsize;
+		unsigned int column = records[k].binY/binsize;
+		if (row >= N || column >= N || !isfinite(records[k].counts) || records[k].counts == 0) continue;
+		rowNonZero[row]++;
+		if (column != row) rowNonZero[column]++;
+	}
+
+	double coverageMean = 0.0;
+	double coverageSd = 0.0;
+	long positiveCoverageBins = 0;
+	for (unsigned int row=0; row<N; row++) if (rowNonZero[row] > 0) {
+		coverageMean += log1p((double) rowNonZero[row]);
+		positiveCoverageBins++;
+	}
+	if (positiveCoverageBins > 0) coverageMean /= positiveCoverageBins;
+	for (unsigned int row=0; row<N; row++) if (rowNonZero[row] > 0) {
+		double delta = log1p((double) rowNonZero[row]) - coverageMean;
+		coverageSd += delta*delta;
+	}
+	if (positiveCoverageBins > 0) coverageSd = sqrt(coverageSd/positiveCoverageBins);
+	double coverageLogThreshold = coverageMean + coverageZCutoff*coverageSd;
+	double coverageMinimumEntries = expm1(coverageLogThreshold);
+	if (coverageMinimumEntries < 1.0) coverageMinimumEntries = 1.0;
+	vector<unsigned char> retainBin(N, 1);
+	long retainedBins = N;
+	if (coverageFilter) {
+		retainedBins = 0;
+		for (unsigned int row=0; row<N; row++) {
+			retainBin[row] = rowNonZero[row] > 0 && log1p((double) rowNonZero[row]) >= coverageLogThreshold;
+			if (retainBin[row]) retainedBins++;
+		}
+	}
+	long removedBins = N-retainedBins;
+	if (verb) {
+		if (coverageFilter)
+			printf("coverage filter z<%g: retained %ld/%u bins (minimum approximately %.1f nonzero entries)\n",
+				coverageZCutoff,retainedBins,N,coverageMinimumEntries);
+		else printf("coverage filter disabled\n");
+	}
+
+	unsigned int *i = (unsigned int *) malloc(inputNonZero*sizeof(int));
+	unsigned int *j = (unsigned int *) malloc(inputNonZero*sizeof(int));
+	float *x = (float *) malloc(inputNonZero*sizeof(float));
+	long nonZer = 0;
+	for (long k=0; k<inputNonZero; k++) {
+		unsigned int row = records[k].binX/binsize;
+		unsigned int column = records[k].binY/binsize;
+		if (row >= N || column >= N || !retainBin[row] || !retainBin[column]) continue;
+		i[nonZer] = row;
+		j[nonZer] = column;
+		x[nonZer] = (float) records[k].counts;
+		if (isnan(x[nonZer])) x[nonZer] = 0;
+		nonZer++;
 	}
 	time(&t1);
 	if (verb) printf("took %ld seconds for %ld records\n",t1 - t0,nonZer);
@@ -181,9 +237,8 @@ int main(int argc, char *argv[]) {
         strcat(chr1,chr);
         if (strcmp(chr1,"chrMT") == 0)  strcpy(chr1,"chrM");
        	char *genome1 = const_cast<char*> (genomeID.c_str());
-        if (strcmp(chr1,"chrY")!=0 && strcmp(chr1,"chrM")!=0 && (100000 % binsize == 0)) {
-		int junk;
-		for (p=0;p<nv+2;p++) junk = flipSign(genome1,ev[p],N,chr1,binsize);
+	        if (strcmp(chr1,"chrY")!=0 && strcmp(chr1,"chrM")!=0 && (100000 % binsize == 0)) {
+		for (p=0;p<nv+2;p++) flipSign(genome1,ev[p],N,chr1,binsize);
 	}
 
 	for (int j0=0;j0<nv+2;j0++) printf("%lg ",lam[j0]);
@@ -200,7 +255,9 @@ int main(int argc, char *argv[]) {
 	fprintf(eigenvalue_out,
 		"first_k\tlambda_k\tlambda_k_plus_1\tlambda_k_plus_2\tgap_k\tgap_k_plus_1"
 		"\tlambda_k_over_gap_k\tlambda_k_plus_1_over_gap_k_plus_1\tmin_ratio"
-		"\ttolerance\testimated_relative_error_first_k\n");
+		"\ttolerance\testimated_relative_error_first_k\tcoverage_filter_enabled"
+		"\tcoverage_z_cutoff\tcoverage_mean_log1p_nonzero\tcoverage_sd_log1p_nonzero"
+		"\tcoverage_min_nonzero_entries\tcoverage_removed_bins\tcoverage_retained_bins\n");
 	for (int j0=0;j0<nv;j0++) {
 		double gap_k = lam[j0] - lam[j0+1];
 		double gap_k_plus_1 = lam[j0+1] - lam[j0+2];
@@ -209,9 +266,12 @@ int main(int argc, char *argv[]) {
 		double min_ratio = ratio_k < ratio_k_plus_1 ? ratio_k : ratio_k_plus_1;
 		double relative_error = tol * min_ratio;
 		fprintf(eigenvalue_out,
-			"%d\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\n",
+			"%d\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g"
+			"\t%d\t%.17g\t%.17g\t%.17g\t%.17g\t%ld\t%ld\n",
 			j0+1, lam[j0], lam[j0+1], lam[j0+2], gap_k, gap_k_plus_1,
-			ratio_k, ratio_k_plus_1, min_ratio, tol, relative_error);
+			ratio_k, ratio_k_plus_1, min_ratio, tol, relative_error,
+			coverageFilter ? 1 : 0, coverageZCutoff, coverageMean, coverageSd,
+			coverageMinimumEntries, removedBins, retainedBins);
 	}
 	fclose(eigenvalue_out);
 	free(eigenvalue_name);

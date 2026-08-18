@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <getopt.h>
 #include <iomanip>
 #include <iostream>
@@ -53,6 +54,9 @@ struct Options {
     double tolerance = 1.0e-7;
     double epsilon = 1.0e-8;
     double rescueThreshold = 0.8;
+    bool coverageFilter = true;
+    double coverageZCutoff = -2.5;
+    double maxTopOnePercentEnergy = 0.5;
 };
 
 struct ChromosomeInfo {
@@ -79,6 +83,13 @@ struct EigenDiagnostic {
     double minRatio;
     double tolerance;
     double estimatedRelativeError;
+    bool coverageFilterEnabled;
+    double coverageZCutoff;
+    double coverageMeanLog;
+    double coverageSdLog;
+    double coverageMinimumEntries;
+    long coverageRemovedBins;
+    long coverageRetainedBins;
 };
 
 void usage(const char *program) {
@@ -97,6 +108,11 @@ void usage(const char *program) {
         "  -e, --epsilon X     Lanczos epsilon (default: 1.0e-8)\n"
         "  -I, --max-iter N    Maximum Lanczos iterations (default: 200)\n"
         "      --threshold X   Rescue absolute-correlation threshold (default: 0.8)\n"
+        "      --coverage-z X  Filter high-resolution bins below this log-count z-score (default: -2.5)\n"
+        "      --no-coverage-filter\n"
+        "                      Disable high-resolution low-coverage filtering\n"
+        "      --max-top1-energy X\n"
+        "                      Reject localized EVs above this fraction (default: 0.5)\n"
         "      --keep-temp     Retain per-chromosome files after success\n"
         "  -v, --verbose N     Verbosity (default: 1)\n"
         "  -h, --help          Show this help\n\n"
@@ -415,7 +431,8 @@ bool onlyExpectedSparseFailures(const vector<Job> &jobs) {
 
 vector<string> workerArguments(const string &worker, const Options &options,
                                const string &hicfile, const string &chromosome,
-                               const string &base, int resolution, int nv) {
+                               const string &base, int resolution, int nv,
+                               bool applyCoverageFilter) {
     vector<string> args;
     args.push_back(worker);
     if (options.observed) args.push_back("-o");
@@ -424,6 +441,11 @@ vector<string> workerArguments(const string &worker, const Options &options,
     args.push_back("-e"); args.push_back(toString(options.epsilon));
     args.push_back("-I"); args.push_back(toString(options.maxIterations));
     args.push_back("-T"); args.push_back(toString(options.solverThreads));
+    if (applyCoverageFilter) {
+        args.push_back("-c"); args.push_back(toString(options.coverageZCutoff));
+    } else {
+        args.push_back("-C");
+    }
     args.push_back("-v"); args.push_back("0");
     args.push_back(hicfile);
     args.push_back(chromosome);
@@ -449,7 +471,8 @@ vector<Job> makeJobs(vector<ChromosomeInfo> &chromosomes, const string &worker,
         job.log = base + ".log";
         job.arguments = workerArguments(worker, options, hicfile,
                                         chromosomes[i].name, base,
-                                        resolution, nv);
+                                        resolution, nv,
+                                        options.coverageFilter && phase != "low");
         jobs.push_back(job);
     }
     return jobs;
@@ -493,7 +516,7 @@ vector<EigenDiagnostic> readEigenDiagnostics(const string &path) {
     getline(in, line);
     while (getline(in, line)) {
         vector<string> fields = splitTabs(line);
-        if (fields.size() < 11)
+        if (fields.size() < 18)
             throw runtime_error("invalid eigenvalue diagnostics: " + path);
         EigenDiagnostic value;
         value.firstK = atoi(fields[0].c_str());
@@ -507,6 +530,13 @@ vector<EigenDiagnostic> readEigenDiagnostics(const string &path) {
         value.minRatio = strtod(fields[8].c_str(), NULL);
         value.tolerance = strtod(fields[9].c_str(), NULL);
         value.estimatedRelativeError = strtod(fields[10].c_str(), NULL);
+        value.coverageFilterEnabled = atoi(fields[11].c_str()) != 0;
+        value.coverageZCutoff = strtod(fields[12].c_str(), NULL);
+        value.coverageMeanLog = strtod(fields[13].c_str(), NULL);
+        value.coverageSdLog = strtod(fields[14].c_str(), NULL);
+        value.coverageMinimumEntries = strtod(fields[15].c_str(), NULL);
+        value.coverageRemovedBins = atol(fields[16].c_str());
+        value.coverageRetainedBins = atol(fields[17].c_str());
         values.push_back(value);
     }
     return values;
@@ -571,7 +601,8 @@ double correlationAtHighResolution(const vector<double> &high,
     for (size_t i = 0; i < high.size(); ++i) {
         long long center = static_cast<long long>(i) * highResolution + highResolution / 2;
         size_t lowIndex = static_cast<size_t>(center / kLowResolution);
-        if (lowIndex >= low.size() || !isfinite(high[i]) || !isfinite(low[lowIndex])) continue;
+        if (lowIndex >= low.size() || !isfinite(high[i]) || !isfinite(low[lowIndex]) ||
+            high[i] == 0.0 || low[lowIndex] == 0.0) continue;
         ++count;
         double sampleCount = static_cast<double>(count);
         double dx = high[i] - meanX;
@@ -585,6 +616,72 @@ double correlationAtHighResolution(const vector<double> &high,
     if (count < 3 || sumXX <= 0.0 || sumYY <= 0.0)
         return numeric_limits<double>::quiet_NaN();
     return sumXY / sqrt(sumXX * sumYY);
+}
+
+struct VectorMetrics {
+    double inverseParticipationRatio;
+    double topOnePercentEnergy;
+    double autocorrelation50kb;
+    double autocorrelation1mb;
+    bool localized;
+};
+
+double lagCorrelation(const vector<double> &values, size_t lag) {
+    if (lag == 0 || lag >= values.size())
+        return numeric_limits<double>::quiet_NaN();
+    double meanX = 0.0, meanY = 0.0, sumXX = 0.0, sumYY = 0.0, sumXY = 0.0;
+    size_t count = 0;
+    for (size_t i = 0; i + lag < values.size(); ++i) {
+        double x = values[i];
+        double y = values[i + lag];
+        if (!isfinite(x) || !isfinite(y) || x == 0.0 || y == 0.0) continue;
+        ++count;
+        double sampleCount = static_cast<double>(count);
+        double dx = x - meanX;
+        meanX += dx / sampleCount;
+        double dy = y - meanY;
+        meanY += dy / sampleCount;
+        sumXX += dx * (x - meanX);
+        sumYY += dy * (y - meanY);
+        sumXY += dx * (y - meanY);
+    }
+    if (count < 3 || sumXX <= 0.0 || sumYY <= 0.0)
+        return numeric_limits<double>::quiet_NaN();
+    return sumXY / sqrt(sumXX * sumYY);
+}
+
+VectorMetrics calculateVectorMetrics(const vector<double> &values, int resolution,
+                                     double maxTopOnePercentEnergy) {
+    vector<double> squared;
+    double sumSquares = 0.0;
+    double sumFourth = 0.0;
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (!isfinite(values[i]) || values[i] == 0.0) continue;
+        double square = values[i] * values[i];
+        squared.push_back(square);
+        sumSquares += square;
+        sumFourth += square * square;
+    }
+    sort(squared.begin(), squared.end(), greater<double>());
+    size_t topCount = squared.empty() ? 0 :
+        max<size_t>(1, static_cast<size_t>(ceil(0.01 * squared.size())));
+    double topEnergy = 0.0;
+    for (size_t i = 0; i < topCount; ++i) topEnergy += squared[i];
+
+    VectorMetrics metrics;
+    metrics.inverseParticipationRatio = sumSquares > 0.0
+        ? sumFourth / (sumSquares * sumSquares)
+        : numeric_limits<double>::quiet_NaN();
+    metrics.topOnePercentEnergy = sumSquares > 0.0
+        ? topEnergy / sumSquares
+        : numeric_limits<double>::quiet_NaN();
+    size_t lag50kb = max<size_t>(1, static_cast<size_t>(llround(50000.0 / resolution)));
+    size_t lag1mb = max<size_t>(1, static_cast<size_t>(llround(1000000.0 / resolution)));
+    metrics.autocorrelation50kb = lagCorrelation(values, lag50kb);
+    metrics.autocorrelation1mb = lagCorrelation(values, lag1mb);
+    metrics.localized = !isfinite(metrics.topOnePercentEnergy) ||
+                        metrics.topOnePercentEnergy > maxTopOnePercentEnergy;
+    return metrics;
 }
 
 void writeRescue(const vector<ChromosomeInfo> &chromosomes,
@@ -607,13 +704,23 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
     report << "chromosome\tselected_eigenvector\tcorrelation\tabs_correlation\tstatus"
            << "\tlambda_k\tlambda_k_plus_1\tlambda_k_plus_2\tgap_k\tgap_k_plus_1"
            << "\tlambda_k_over_gap_k\tlambda_k_plus_1_over_gap_k_plus_1\tmin_ratio"
-           << "\ttolerance\testimated_relative_error_first_k";
+           << "\ttolerance\testimated_relative_error_first_k"
+           << "\tinverse_participation_ratio\ttop_1pct_energy\tautocorrelation_50kb"
+           << "\tautocorrelation_1mb\tlocalized"
+           << "\tcoverage_filter_enabled\tcoverage_z_cutoff\tcoverage_mean_log1p_nonzero"
+           << "\tcoverage_sd_log1p_nonzero\tcoverage_min_nonzero_entries"
+           << "\tcoverage_removed_bins\tcoverage_retained_bins";
     for (int ev = 1; ev <= kRescueEigenvectors; ++ev) report << "\tcorr_EV" << ev;
+    for (int ev = 1; ev <= kRescueEigenvectors; ++ev) report << "\tlocalized_EV" << ev;
     report << '\n' << setprecision(17);
     eigen << "chromosome\tresolution\tfirst_k\tlambda_k\tlambda_k_plus_1\tlambda_k_plus_2"
           << "\tgap_k\tgap_k_plus_1\tlambda_k_over_gap_k"
           << "\tlambda_k_plus_1_over_gap_k_plus_1\tmin_ratio\ttolerance"
-          << "\testimated_relative_error_first_k\n" << setprecision(17);
+          << "\testimated_relative_error_first_k\tinverse_participation_ratio"
+          << "\ttop_1pct_energy\tautocorrelation_50kb\tautocorrelation_1mb\tlocalized"
+          << "\tcoverage_filter_enabled\tcoverage_z_cutoff\tcoverage_mean_log1p_nonzero"
+          << "\tcoverage_sd_log1p_nonzero\tcoverage_min_nonzero_entries"
+          << "\tcoverage_removed_bins\tcoverage_retained_bins\n" << setprecision(17);
 
     for (size_t c = 0; c < chromosomes.size(); ++c) {
         ostringstream lowBase;
@@ -625,19 +732,29 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
         vector<double> correlations(kRescueEigenvectors,
                                     numeric_limits<double>::quiet_NaN());
         vector<vector<double> > high(kRescueEigenvectors);
+        vector<VectorMetrics> metrics(kRescueEigenvectors);
         int selected = -1;
         int best = -1;
+        int bestOverall = -1;
         double bestAbsolute = -1.0;
+        double bestOverallAbsolute = -1.0;
         for (int ev = 0; ev < kRescueEigenvectors; ++ev) {
             high[ev] = readWig(chromosomes[c].base + ".Ev" + toString(ev + 1) + ".wig");
             correlations[ev] = correlationAtHighResolution(high[ev], low, options.resolution);
+            metrics[ev] = calculateVectorMetrics(high[ev], options.resolution,
+                                                 options.maxTopOnePercentEnergy);
             if (isfinite(correlations[ev])) {
                 double absolute = fabs(correlations[ev]);
-                if (absolute > bestAbsolute) {
+                if (absolute > bestOverallAbsolute) {
+                    bestOverallAbsolute = absolute;
+                    bestOverall = ev;
+                }
+                if (!metrics[ev].localized && absolute > bestAbsolute) {
                     bestAbsolute = absolute;
                     best = ev;
                 }
-                if (selected < 0 && absolute > options.rescueThreshold) selected = ev;
+                if (!metrics[ev].localized && selected < 0 &&
+                    absolute > options.rescueThreshold) selected = ev;
             }
         }
         string status = "passed";
@@ -645,8 +762,16 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
             selected = 0;
             status = "no_low_resolution_reference";
         } else if (selected < 0) {
-            selected = best >= 0 ? best : 0;
-            status = best >= 0 ? "fallback_best" : "fallback_EV1_no_finite_correlation";
+            if (best >= 0) {
+                selected = best;
+                status = "fallback_best";
+            } else if (bestOverall >= 0) {
+                selected = bestOverall;
+                status = "fallback_localized_no_eligible_vector";
+            } else {
+                selected = 0;
+                status = "fallback_EV1_no_finite_correlation";
+            }
         }
         double selectedCorrelation = correlations[selected];
         double sign = isfinite(selectedCorrelation) && selectedCorrelation < 0.0 ? -1.0 : 1.0;
@@ -676,9 +801,23 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
                << '\t' << selectedDiagnostic.ratioKPlus1
                << '\t' << selectedDiagnostic.minRatio
                << '\t' << selectedDiagnostic.tolerance
-               << '\t' << selectedDiagnostic.estimatedRelativeError;
+               << '\t' << selectedDiagnostic.estimatedRelativeError
+               << '\t' << metrics[selected].inverseParticipationRatio
+               << '\t' << metrics[selected].topOnePercentEnergy
+               << '\t' << metrics[selected].autocorrelation50kb
+               << '\t' << metrics[selected].autocorrelation1mb
+               << '\t' << (metrics[selected].localized ? 1 : 0)
+               << '\t' << (selectedDiagnostic.coverageFilterEnabled ? 1 : 0)
+               << '\t' << selectedDiagnostic.coverageZCutoff
+               << '\t' << selectedDiagnostic.coverageMeanLog
+               << '\t' << selectedDiagnostic.coverageSdLog
+               << '\t' << selectedDiagnostic.coverageMinimumEntries
+               << '\t' << selectedDiagnostic.coverageRemovedBins
+               << '\t' << selectedDiagnostic.coverageRetainedBins;
         for (int ev = 0; ev < kRescueEigenvectors; ++ev)
             report << '\t' << correlations[ev];
+        for (int ev = 0; ev < kRescueEigenvectors; ++ev)
+            report << '\t' << (metrics[ev].localized ? 1 : 0);
         report << '\n';
         for (int ev = 0; ev < kRescueEigenvectors; ++ev) {
             const EigenDiagnostic &d = diagnostics[ev];
@@ -686,7 +825,16 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
                   << '\t' << d.lambdaK << '\t' << d.lambdaKPlus1 << '\t' << d.lambdaKPlus2
                   << '\t' << d.gapK << '\t' << d.gapKPlus1
                   << '\t' << d.ratioK << '\t' << d.ratioKPlus1 << '\t' << d.minRatio
-                  << '\t' << d.tolerance << '\t' << d.estimatedRelativeError << '\n';
+                  << '\t' << d.tolerance << '\t' << d.estimatedRelativeError
+                  << '\t' << metrics[ev].inverseParticipationRatio
+                  << '\t' << metrics[ev].topOnePercentEnergy
+                  << '\t' << metrics[ev].autocorrelation50kb
+                  << '\t' << metrics[ev].autocorrelation1mb
+                  << '\t' << (metrics[ev].localized ? 1 : 0)
+                  << '\t' << (d.coverageFilterEnabled ? 1 : 0)
+                  << '\t' << d.coverageZCutoff << '\t' << d.coverageMeanLog
+                  << '\t' << d.coverageSdLog << '\t' << d.coverageMinimumEntries
+                  << '\t' << d.coverageRemovedBins << '\t' << d.coverageRetainedBins << '\n';
         }
     }
     wig.close(); report.close(); eigen.close();
@@ -728,7 +876,8 @@ int main(int argc, char **argv) {
     if (cpus == 0) cpus = 1;
     options.jobs = static_cast<int>(min(4u, cpus));
 
-    enum { OPT_RESCUE = 1000, OPT_THRESHOLD, OPT_KEEP_TEMP };
+    enum { OPT_RESCUE = 1000, OPT_THRESHOLD, OPT_KEEP_TEMP, OPT_COVERAGE_Z,
+           OPT_NO_COVERAGE_FILTER, OPT_MAX_TOP1_ENERGY };
     static struct option longOptions[] = {
         {"rescue", no_argument, NULL, OPT_RESCUE},
         {"resolution", required_argument, NULL, 'r'},
@@ -740,6 +889,9 @@ int main(int argc, char **argv) {
         {"epsilon", required_argument, NULL, 'e'},
         {"max-iter", required_argument, NULL, 'I'},
         {"threshold", required_argument, NULL, OPT_THRESHOLD},
+        {"coverage-z", required_argument, NULL, OPT_COVERAGE_Z},
+        {"no-coverage-filter", no_argument, NULL, OPT_NO_COVERAGE_FILTER},
+        {"max-top1-energy", required_argument, NULL, OPT_MAX_TOP1_ENERGY},
         {"keep-temp", no_argument, NULL, OPT_KEEP_TEMP},
         {"verbose", required_argument, NULL, 'v'},
         {"help", no_argument, NULL, 'h'},
@@ -752,6 +904,12 @@ int main(int argc, char **argv) {
             case OPT_RESCUE: options.rescue = true; break;
             case OPT_THRESHOLD: options.rescueThreshold = atof(optarg); break;
             case OPT_KEEP_TEMP: options.keepTemp = true; break;
+            case OPT_COVERAGE_Z:
+                options.coverageZCutoff = atof(optarg);
+                options.coverageFilter = true;
+                break;
+            case OPT_NO_COVERAGE_FILTER: options.coverageFilter = false; break;
+            case OPT_MAX_TOP1_ENERGY: options.maxTopOnePercentEnergy = atof(optarg); break;
             case 'r': options.resolution = atoi(optarg); break;
             case 'n': options.normalization = optarg; break;
             case 'o': options.observed = true; break;
@@ -775,10 +933,13 @@ int main(int argc, char **argv) {
     if (optind < argc) options.resolution = atoi(argv[optind++]);
     if (options.resolution <= 0 || options.jobs <= 0 || options.solverThreads <= 0 ||
         options.maxIterations <= (options.rescue ? kRescueEigenvectors + 2 : 3) ||
-        options.rescueThreshold < 0.0 || options.rescueThreshold > 1.0) {
+        options.rescueThreshold < 0.0 || options.rescueThreshold > 1.0 ||
+        options.coverageZCutoff >= 0.0 || options.maxTopOnePercentEnergy <= 0.0 ||
+        options.maxTopOnePercentEnergy > 1.0) {
         cerr << "Invalid numeric option. Resolution/jobs/threads must be positive, "
              << "max-iter must exceed the requested eigenvector count plus two, "
-             << "and threshold must be in [0,1]." << endl;
+             << "threshold must be in [0,1], coverage-z must be negative, and "
+             << "max-top1-energy must be in (0,1]." << endl;
         return EXIT_FAILURE;
     }
     if (options.rescue && options.resolution > kLowResolution) {
@@ -802,7 +963,10 @@ int main(int argc, char **argv) {
             cerr << "Running " << chromosomes.size() << " chromosomes at "
                  << options.resolution << " bp with " << options.normalization
                  << (options.observed ? " observed" : " observed/expected")
-                 << "; up to " << options.jobs << " chromosome jobs in parallel" << endl;
+                 << "; up to " << options.jobs << " chromosome jobs in parallel"
+                 << (options.coverageFilter ? "; high-resolution coverage z cutoff " +
+                     toString(options.coverageZCutoff) : "; coverage filter disabled")
+                 << endl;
         }
 
         if (!options.rescue) {

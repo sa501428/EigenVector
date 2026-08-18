@@ -63,6 +63,12 @@ Options:
   -e <float>   Set epsilon (default: 1.0e-8)
   -I <int>     Set maximum iterations (default: 200)
   -v <int>     Set verbosity level (default: 1)
+  --coverage-z <float>
+               High-resolution log1p(nonzero-count) z cutoff (default: -2.5)
+  --no-coverage-filter
+               Disable low-coverage row/column filtering
+  --max-top1-energy <float>
+               Reject localized rescue candidates above this fraction (default: 0.5)
 ```
 
 Normal mode calculates EV1 independently for every chromosome and merges the
@@ -72,6 +78,14 @@ Missing parent directories in `<outbase>` are created automatically.
 At unusually coarse resolutions, a chromosome may be too sparse to form an
 eigensystem; that chromosome is zero-filled with a warning so the genome-wide
 WIG remains structurally complete.
+
+Before a requested-resolution calculation, the worker counts nonzero matrix
+entries incident on every bin. It computes z-scores on `log1p(count)` among
+nonzero bins, removes zero-count bins and bins below the default `-2.5` cutoff,
+and removes every matrix entry touching a filtered bin. The 50 kb rescue
+reference is intentionally left unfiltered. The log transform prevents the
+strongly right-skewed count distribution from making the raw z-score cutoff
+ineffective.
 
 Example using all defaults (SCALE, o/e, 5 kb):
 
@@ -102,6 +116,12 @@ If a chromosome is too sparse to calculate a 50 kb reference (for example,
 mitochondrial DNA), rescue retains high-resolution EV1 and reports
 `no_low_resolution_reference`; its low-resolution reference section is zero-filled.
 
+Before correlation-based selection, each high-resolution vector is checked for
+localization. A vector is ineligible when its largest 1% of nonzero bins contain
+more than 50% of its squared magnitude. If every finite candidate is localized,
+the best match is retained only as an explicitly marked
+`fallback_localized_no_eligible_vector` result.
+
 Rescue mode produces:
 
 - `<outbase>.wig`: rescued, genome-wide vector
@@ -122,7 +142,10 @@ relative_error_estimate = tolerance * min_ratio
 The two extra Ritz values maintained internally by the solver make these fields
 available through `k=10`. The long-form eigenvalue TSV contains one row per
 chromosome and `k`; the rescue TSV includes the same diagnostics for the
-selected `k`.
+selected `k`. It also reports inverse participation ratio, top-1%-energy
+fraction, 50 kb and 1 Mb spatial autocorrelation, localization flags, and the
+coverage-filter threshold and retained/removed bin counts. The long-form
+eigenvalue TSV includes these metrics for every `k`.
 
 Use `--threshold` to change 0.8 and `--keep-temp` to retain per-chromosome
 outputs and logs.
