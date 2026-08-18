@@ -16,7 +16,8 @@ sudo apt-get install -y \
     liblapack-dev \
     liblapacke-dev \
     libcurl4-openssl-dev \
-    zlib1g-dev
+    zlib1g-dev \
+    libzstd-dev
 
 # Check if straw is available
 STRAW_PATH="$HOME/straw"
@@ -31,21 +32,28 @@ echo "🔨 Building executables..."
 
 # Common compiler flags
 COMMON_FLAGS="-O2 -Wno-format-security -I/usr/include -I$STRAW_PATH/C++"
-COMMON_LIBS="-L/usr/lib -lz -lcurl -lpthread -lopenblas -llapack -llapacke"
+COMMON_LIBS="-L/usr/lib -lz -lzstd -lcurl -lpthread -lopenblas -llapack -llapacke"
 
 # First compile straw library
 echo "Building straw library..."
 g++ $COMMON_FLAGS -c "$STRAW_PATH/C++/straw.cpp" -o straw.o
 
-# Compile Lan.exe
-echo "Building Lan.exe..."
-g++ $COMMON_FLAGS -std=c++11 -o Lan.exe \
+# Compile chromosome worker
+echo "Building LanChr.exe..."
+g++ $COMMON_FLAGS -std=c++11 -o LanChr.exe \
     s_fLan.cpp \
     s_fSOLan.c \
     s_dthMul.c \
     hgFlipSign.c \
     straw.o \
     -I. \
+    $COMMON_LIBS
+
+# Compile genome-wide chromosome-parallel driver
+echo "Building Lan.exe..."
+g++ $COMMON_FLAGS -std=c++11 -o Lan.exe \
+    LanGenome.cpp \
+    straw.o \
     $COMMON_LIBS
 
 # Compile GWev.exe
@@ -64,5 +72,6 @@ rm -f straw.o
 echo "✅ Build completed successfully!"
 echo
 echo "You can now run:"
-echo "  ./Lan.exe  - for chromosome-specific analysis"
-echo "  ./GWev.exe - for genome-wide analysis" 
+echo "  ./Lan.exe    - for chromosome-parallel genome-wide analysis"
+echo "  ./LanChr.exe - internal/single-chromosome analysis"
+echo "  ./GWev.exe - for genome-wide analysis"

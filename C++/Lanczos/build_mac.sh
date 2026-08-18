@@ -14,6 +14,7 @@ brew install lapack
 brew install gcc@13  # Latest stable GCC
 brew install curl
 brew install zlib
+brew install zstd
 
 # Set up environment variables for OpenBLAS and LAPACK
 export LDFLAGS="-L/opt/homebrew/opt/openblas/lib -L/opt/homebrew/opt/lapack/lib"
@@ -31,22 +32,29 @@ fi
 echo "🔨 Building executables..."
 
 # Common compiler flags
-COMMON_FLAGS="-O2 -Wno-format-security -I/opt/homebrew/opt/openblas/include -I/opt/homebrew/opt/lapack/include -I$STRAW_PATH/C++"
-COMMON_LIBS="-L/opt/homebrew/opt/openblas/lib -L/opt/homebrew/opt/lapack/lib -lz -lcurl -lpthread -lopenblas -llapack -llapacke"
+COMMON_FLAGS="-O2 -Wno-format-security -I/opt/homebrew/opt/openblas/include -I/opt/homebrew/opt/lapack/include -I/opt/homebrew/opt/zstd/include -I$STRAW_PATH/C++"
+COMMON_LIBS="-L/opt/homebrew/opt/openblas/lib -L/opt/homebrew/opt/lapack/lib -L/opt/homebrew/opt/zstd/lib -lz -lzstd -lcurl -lpthread -lopenblas -llapack -llapacke"
 
 # First compile straw library
 echo "Building straw library..."
 g++-13 $COMMON_FLAGS -c "$STRAW_PATH/C++/straw.cpp" -o straw.o
 
-# Compile Lan.exe
-echo "Building Lan.exe..."
-g++-13 $COMMON_FLAGS -std=c++11 -o Lan.exe \
+# Compile chromosome worker
+echo "Building LanChr.exe..."
+g++-13 $COMMON_FLAGS -std=c++11 -o LanChr.exe \
     s_fLan.cpp \
     s_fSOLan.c \
     s_dthMul.c \
     hgFlipSign.c \
     straw.o \
     -I. \
+    $COMMON_LIBS
+
+# Compile genome-wide chromosome-parallel driver
+echo "Building Lan.exe..."
+g++-13 $COMMON_FLAGS -std=c++11 -o Lan.exe \
+    LanGenome.cpp \
+    straw.o \
     $COMMON_LIBS
 
 # Compile GWev.exe
@@ -65,5 +73,6 @@ rm -f straw.o
 echo "✅ Build completed successfully!"
 echo
 echo "You can now run:"
-echo "  ./Lan.exe  - for chromosome-specific analysis"
-echo "  ./GWev.exe - for genome-wide analysis" 
+echo "  ./Lan.exe    - for chromosome-parallel genome-wide analysis"
+echo "  ./LanChr.exe - internal/single-chromosome analysis"
+echo "  ./GWev.exe - for genome-wide analysis"

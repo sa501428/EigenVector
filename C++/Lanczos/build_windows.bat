@@ -28,21 +28,28 @@ echo 🔨 Building executables...
 
 REM Common compiler flags
 set "COMMON_FLAGS=-O2 -Wno-format-security -I%MINGW_PATH%\include -I%STRAW_PATH%\C++"
-set "COMMON_LIBS=-L%MINGW_PATH%\lib -lz -lcurl -lpthread -lopenblas -llapack -llapacke"
+set "COMMON_LIBS=-L%MINGW_PATH%\lib -lz -lzstd -lcurl -lpthread -lopenblas -llapack -llapacke"
 
 REM First compile straw library
 echo Building straw library...
 g++ %COMMON_FLAGS% -c "%STRAW_PATH%\C++\straw.cpp" -o straw.o
 
-REM Compile Lan.exe
-echo Building Lan.exe...
-g++ %COMMON_FLAGS% -std=c++11 -o Lan.exe ^
+REM Compile chromosome worker
+echo Building LanChr.exe...
+g++ %COMMON_FLAGS% -std=c++11 -o LanChr.exe ^
     s_fLan.cpp ^
     s_fSOLan.c ^
     s_dthMul.c ^
     hgFlipSign.c ^
     straw.o ^
     -I. ^
+    %COMMON_LIBS%
+
+REM Compile genome-wide chromosome-parallel driver
+echo Building Lan.exe...
+g++ %COMMON_FLAGS% -std=c++11 -o Lan.exe ^
+    LanGenome.cpp ^
+    straw.o ^
     %COMMON_LIBS%
 
 REM Compile GWev.exe
@@ -61,7 +68,8 @@ del straw.o
 echo ✅ Build completed successfully!
 echo.
 echo You can now run:
-echo   Lan.exe  - for chromosome-specific analysis
+echo   Lan.exe    - for chromosome-parallel genome-wide analysis
+echo   LanChr.exe - internal/single-chromosome analysis
 echo   GWev.exe - for genome-wide analysis
 
-endlocal 
+endlocal

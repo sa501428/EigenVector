@@ -21,7 +21,7 @@ static void usage(const char *argv0)
   fprintf(stderr, "  -t <float>   Set tolerance (default: 1.0e-7)\n");
   fprintf(stderr, "  -e <float>   Set epsilon (default: 1.0e-8)\n");
   fprintf(stderr, "  -I <int>     Set maximum iterations (default: 200)\n");
-  fprintf(stderr, "  -n <string>  Set normalization method (default: NONE)\n");
+  fprintf(stderr, "  -n <string>  Set normalization method (default: SCALE)\n");
   fprintf(stderr, "  -T <int>     Set number of threads (default: 1)\n");
   fprintf(stderr, "  -v <int>     Set verbosity level (default: 1)\n");
   fprintf(stderr, "  -h           Show this help message\n\n");
@@ -30,11 +30,11 @@ static void usage(const char *argv0)
   fprintf(stderr, "  <chromosome>  Chromosome name (e.g., chr1)\n");
   fprintf(stderr, "  <outbase>     Base name for output eigenvector files\n");
   fprintf(stderr, "  <resolution>  Resolution in base pairs\n");
-  fprintf(stderr, "  [nv]         Number of eigenvectors (optional, default: 2)\n");
+  fprintf(stderr, "  [nv]         Number of eigenvectors to write (optional, default: 1)\n");
 }
 
 int main(int argc, char *argv[]) {
-	string norm("NONE");
+	string norm("SCALE");
 	string unit("BP");
 	string ob("oe");
 	ifstream fin;
@@ -94,12 +94,16 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Error! File %s cannot be opened for reading\n", argv[optind-1]);
 		exit(EXIT_FAILURE);
 	  }
-	int nv=2;
+	int nv=1;
 	string chrom(argv[optind++]);
 	char *out_name = argv[optind++];
 	if (verb) printf("Eigenvectors base name is: %s\n", out_name);
 	int binsize = atoi(argv[optind++]);
 	if (argc > optind) nv=atoi(argv[optind++]);
+	if (binsize <= 0 || nv <= 0 || maxiter <= nv+2 || threads <= 0) {
+		fprintf(stderr, "Error: resolution, eigenvector count, and threads must be positive; max iterations must exceed nv+2\n");
+		exit(EXIT_FAILURE);
+	}
 
 	printf("\n");
 
@@ -184,7 +188,37 @@ int main(int argc, char *argv[]) {
 
 	for (int j0=0;j0<nv+2;j0++) printf("%lg ",lam[j0]);
 	printf("\n");
-	for (int j0=0;j0<nv+2;j0++) {
+
+	char *eigenvalue_name = (char *) malloc((20+strlen(out_name))*sizeof(char));
+	strcpy(eigenvalue_name, out_name);
+	strcat(eigenvalue_name, ".eigenvalues.tsv");
+	FILE *eigenvalue_out = fopen(eigenvalue_name, "w");
+	if (eigenvalue_out==NULL) {
+		fprintf(stderr, "Error! File %s cannot be opened for writing\n", eigenvalue_name);
+		exit(EXIT_FAILURE);
+	}
+	fprintf(eigenvalue_out,
+		"first_k\tlambda_k\tlambda_k_plus_1\tlambda_k_plus_2\tgap_k\tgap_k_plus_1"
+		"\tlambda_k_over_gap_k\tlambda_k_plus_1_over_gap_k_plus_1\tmin_ratio"
+		"\ttolerance\testimated_relative_error_first_k\n");
+	for (int j0=0;j0<nv;j0++) {
+		double gap_k = lam[j0] - lam[j0+1];
+		double gap_k_plus_1 = lam[j0+1] - lam[j0+2];
+		double ratio_k = lam[j0] / gap_k;
+		double ratio_k_plus_1 = lam[j0+1] / gap_k_plus_1;
+		double min_ratio = ratio_k < ratio_k_plus_1 ? ratio_k : ratio_k_plus_1;
+		double relative_error = tol * min_ratio;
+		fprintf(eigenvalue_out,
+			"%d\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\n",
+			j0+1, lam[j0], lam[j0+1], lam[j0+2], gap_k, gap_k_plus_1,
+			ratio_k, ratio_k_plus_1, min_ratio, tol, relative_error);
+	}
+	fclose(eigenvalue_out);
+	free(eigenvalue_name);
+
+	// SOLan uses nv+2 Ritz vectors internally, but only the requested nv vectors
+	// are part of the public output.
+	for (int j0=0;j0<nv;j0++) {
 		char *curout = (char *) malloc((10+strlen(out_name))*sizeof(char));
 		char *temp = (char *) malloc(50);
 		snprintf(temp, 50, ".Ev%d.wig", j0+1);
@@ -223,6 +257,5 @@ int main(int argc, char *argv[]) {
 		free(curout);
 		free(temp);
 	}
-	return(iter);
+	return(EXIT_SUCCESS);
 }
-
