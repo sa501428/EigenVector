@@ -24,6 +24,7 @@ void *Mul(void *threadid) {
                res[i[p]] += x[p]*v[j[p]];
                res[j[p]] += x[p]*v[i[p]];
 	}
+	return NULL;
 }
 
 void utmvMul(int *i,int *j,double *x,long m,double *v,int k,double *res, int nth, double **rs) {
@@ -52,5 +53,5 @@ void utmvMul(int *i,int *j,double *x,long m,double *v,int k,double *res, int nth
 		res[p] = 0;
 		for (t=0;t<nth;t++) res[p] += rs[t][p];
 	}
+	free(mm);
 }
-

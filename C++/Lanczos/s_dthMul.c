@@ -53,5 +53,5 @@ void utmvMul(unsigned int *i,unsigned int *j,float *x,long m,double *v,unsigned 
 		res[p] = 0;
 		for (t=0;t<nth;t++) res[p] += rs[t][p];
 	}
+	free(mm);
 }
-

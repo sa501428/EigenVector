@@ -9,9 +9,6 @@ using namespace std;
 
 int bestEigen(long m,int *i,int *j,double *x,int *N,double *l1,double *l2,double *a1,double *a2,double *ev,double *er,double tol,int maxiter,int threads);
 
-map<string, chromosome> readHeader(istream &fin, long &masterIndexPosition, string &genomeID, int &numChromosomes,
-                                   int &version, long &nviPosition, long &nviLength);
-
 int flipSign(const char *genome, double *x, int n, char *chr, int binsize);
 
 static void usage(const char *argv0)
@@ -107,14 +104,13 @@ int main(int argc, char *argv[]) {
 	string hg38("hg38");
 
 // chromosome map for finding matrix
-    long master = 0L;
+    int64_t master = 0;
     map<string, chromosome> chromosomeMap;
     string genomeID;
-    int numChromosomes = 0;
-    int version = 0;
-    long nviPosition = 0;
-    long nviLength = 0;
-    long totalFileSize;
+    int32_t numChromosomes = 0;
+    int32_t version = 0;
+    int64_t nviPosition = 0;
+    int64_t nviLength = 0;
 
     chromosomeMap = readHeader(fin, master, genomeID, numChromosomes, version, nviPosition, nviLength);
     fin.close();
@@ -193,7 +189,7 @@ int main(int argc, char *argv[]) {
 		char *genome1 = const_cast<char*> (genomeID.c_str());
 		if (100000 % binsize == 0) int junk = flipSign(genome1,ev,N,chr1,binsize);
                 for (int j=0;j< N;j++) {
-			if (j == N-1) fprintf(fout,"fixedStep chrom=%s start=%d step=%ld span=%ld\n",chr1,j*binsize+1,itr->second.length % binsize, itr->second.length % binsize );
+			if (j == N-1) fprintf(fout,"fixedStep chrom=%s start=%d step=%lld span=%lld\n",chr1,j*binsize+1,static_cast<long long>(itr->second.length % binsize), static_cast<long long>(itr->second.length % binsize) );
 			if (!std::isnan(ev[j])) fprintf(fout,"%f\n",ev[j]);
 			else fprintf(fout,"%s\n","0");
 //			else fprintf(fout,"%s\n","NaN");
@@ -208,4 +204,3 @@ int main(int argc, char *argv[]) {
 	if (verb) printf("\n**************    all together took %10.3f seconds\n",((double) (en.tv_sec - st.tv_sec)) + ((double) (en.tv_nsec - st.tv_nsec))/1e9);
 	return(0);
 }
-

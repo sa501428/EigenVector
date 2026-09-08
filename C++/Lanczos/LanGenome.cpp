@@ -57,6 +57,7 @@ struct Options {
     bool coverageFilter = true;
     double coverageZCutoff = -2.5;
     double maxTopOnePercentEnergy = 0.5;
+    string chromosomeList;
 };
 
 struct ChromosomeInfo {
@@ -103,6 +104,7 @@ void usage(const char *program) {
         "                      Hi-C normalization (default: SCALE)\n"
         "  -o, --observed      Use observed instead of observed/expected\n"
         "  -j, --jobs N        Concurrent chromosomes (default: min(CPUs, 4))\n"
+        "      --chromosomes L  Comma-separated chromosomes (default: all)\n"
         "  -T, --threads N     Threads inside each chromosome solver (default: 1)\n"
         "  -t, --tolerance X   Lanczos tolerance (default: 1.0e-7)\n"
         "  -e, --epsilon X     Lanczos epsilon (default: 1.0e-8)\n"
@@ -877,13 +879,14 @@ int main(int argc, char **argv) {
     options.jobs = static_cast<int>(min(4u, cpus));
 
     enum { OPT_RESCUE = 1000, OPT_THRESHOLD, OPT_KEEP_TEMP, OPT_COVERAGE_Z,
-           OPT_NO_COVERAGE_FILTER, OPT_MAX_TOP1_ENERGY };
+           OPT_NO_COVERAGE_FILTER, OPT_MAX_TOP1_ENERGY, OPT_CHROMOSOMES };
     static struct option longOptions[] = {
         {"rescue", no_argument, NULL, OPT_RESCUE},
         {"resolution", required_argument, NULL, 'r'},
         {"normalization", required_argument, NULL, 'n'},
         {"observed", no_argument, NULL, 'o'},
         {"jobs", required_argument, NULL, 'j'},
+        {"chromosomes", required_argument, NULL, OPT_CHROMOSOMES},
         {"threads", required_argument, NULL, 'T'},
         {"tolerance", required_argument, NULL, 't'},
         {"epsilon", required_argument, NULL, 'e'},
@@ -910,6 +913,7 @@ int main(int argc, char **argv) {
                 break;
             case OPT_NO_COVERAGE_FILTER: options.coverageFilter = false; break;
             case OPT_MAX_TOP1_ENERGY: options.maxTopOnePercentEnergy = atof(optarg); break;
+            case OPT_CHROMOSOMES: options.chromosomeList = optarg; break;
             case 'r': options.resolution = atoi(optarg); break;
             case 'n': options.normalization = optarg; break;
             case 'o': options.observed = true; break;
@@ -956,6 +960,16 @@ int main(int argc, char **argv) {
     string tempDirectory;
     try {
         vector<ChromosomeInfo> chromosomes = readChromosomes(hicfile);
+        if (!options.chromosomeList.empty()) {
+            set<string> selected;
+            istringstream names(options.chromosomeList);
+            string name;
+            while (getline(names, name, ',')) if (!name.empty()) selected.insert(name);
+            chromosomes.erase(remove_if(chromosomes.begin(), chromosomes.end(),
+                [&](const ChromosomeInfo &chromosome) {
+                    return selected.count(chromosome.name) == 0;
+                }), chromosomes.end());
+        }
         if (chromosomes.empty()) throw runtime_error("Hi-C file has no chromosomes");
         ensureOutputDirectory(outbase);
         tempDirectory = makeTempDirectory(outbase);

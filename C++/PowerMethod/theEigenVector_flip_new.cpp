@@ -12,9 +12,6 @@ int bestEigen(long m,int *i,int *j,double *x,int *N,double *l1,double *l2,double
 
 int flipSign(const char *genome, double *x, int n, char *chr, int binsize);
 
-map<string, chromosome> readHeader(istream &fin, long &masterIndexPosition, string &genomeID, int &numChromosomes,
-                                   int &version, long &nviPosition, long &nviLength);
-
 static void usage(const char *argv0)
 {
   fprintf(stderr, "Usage: %s [-o (observed)][-t tol][-I max_iterations][-n normalization][-T threads][-v verbose] <hicfile> <chromosome> <outfile> <resolution> \n", argv0);
@@ -97,14 +94,13 @@ int main(int argc, char *argv[]) {
 	printf("\n");
 
 // chromosome map for finding matrix
-    long master = 0L;
+    int64_t master = 0;
     map<string, chromosome> chromosomeMap;
     string genomeID;
-    int numChromosomes = 0;
-    int version = 0;
-    long nviPosition = 0;
-    long nviLength = 0;
-    long totalFileSize;
+    int32_t numChromosomes = 0;
+    int32_t version = 0;
+    int64_t nviPosition = 0;
+    int64_t nviLength = 0;
 
     chromosomeMap = readHeader(fin, master, genomeID, numChromosomes, version, nviPosition, nviLength);
     map<string,chromosome>::iterator itr0 = chromosomeMap.find(chrom);
@@ -181,6 +177,8 @@ int main(int argc, char *argv[]) {
 		else fprintf(fout,"%20s\n","NaN");
 	}
 	fclose(fout);
-	return(iter);
+	// Convergence iterations are diagnostic output, not a process status.
+	// Returning the iteration count made every successful scripted run look
+	// like a failure to shells using `set -e`.
+	return 0;
 }
-
