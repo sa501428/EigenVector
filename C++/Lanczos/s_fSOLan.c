@@ -1,210 +1,106 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
 #include <lapacke.h>
-
-void normalize(double *x,unsigned int n) {
-	unsigned int i;
-	double s;
-	s = 0;
-	for (i=0; i<n;i++) s += x[i]*x[i];
-	s = 1.0/sqrt(s);
-	for (i=0;i<n;i++) x[i] *= s;
-}
-	
-double norm(double *x,unsigned int n) {
-	unsigned int i;
-	double s;
-	s = 0;
-	for (i=0; i<n;i++) s += x[i]*x[i];
-	s = sqrt(s);
-	return(s);
-}
-	
-double dot(double *x, double *y, unsigned int n) {
-	unsigned int i;
-	double s;
-	s = 0;
-	for (i=0;i<n;i++) s += x[i]*y[i];
-	return s;
-}
+#include "../common/CorrelationWorkspace.h"
 
 void utmvMul(unsigned int *i,unsigned int *j,float *x,long m,double *v,unsigned int k,double *res, int threads, double **space);
 
-void fullMul(unsigned int *i,unsigned int *j,float *x,long m,double *a,unsigned int n,double *res, double *good,double *c,double *d, int threads, double **space) {
-	double *temp1 = (double *) malloc(n*sizeof(double));
-	double *temp2 = (double *) malloc(n*sizeof(double));
-	unsigned int p;
-	for (p=0;p<n;p++) temp1[p] = d[p]*a[p];
-	utmvMul(i,j,x,m,temp1,n,temp2,threads,space);
-	double z;
-	z = dot(temp1,c,n);
-	for (p=0;p<n;p++) temp2[p] -= good[p]*z; 
-	utmvMul(i,j,x,m,temp2,n,temp1,threads,space);
-	z = dot(good,temp2,n);
-	for (p=0;p<n;p++) res[p] = d[p]*(temp1[p] - c[p]*z);
-	free(temp1);
-	free(temp2);
-}
-
 int SOLan(long m,unsigned int *i,unsigned int *j,float *x,unsigned int *N,double *r,int nv,double *lam,double **ev,double *er,double tol,double eps,int maxiter,int threads) {
-	double *s1,*s2,*good, *sd, *d, *c;
-	unsigned int n,k;
-	long p;
-	if ((*N) <= 0) {
-		n = 0;
-		for (p=0;p<m;p++) if (j[p] > n) n = j[p];
-	}
-	else n = *N;
-	s1 = (double *) malloc(n*sizeof(double));
-	s2 = (double *) malloc(n*sizeof(double));
-	good = (double *) malloc(n*sizeof(double));
-	sd = (double *) malloc(n*sizeof(double));
-	d = (double *) malloc(n*sizeof(double));
-	c = (double *) malloc(n*sizeof(double));
-	double **space = (double **) malloc(threads*sizeof(double *));
-	for (p=0;p<threads;p++) space[p] = (double *) malloc(n*sizeof(double));
-
-	for (p=0;p<n;p++) {
-		s1[p] = 0;
-		s2[p] = 0;
-	}
-	for (p=0; p<m; p++) {
-		s1[i[p]] += x[p];
-		s1[j[p]] += x[p];
-		s2[i[p]] += x[p]*x[p];
-		s2[j[p]] += x[p]*x[p];
-		if (i[p] == j[p]) s2[i[p]] += 2.0*x[p]*x[p];
-	}
-
-	k = 0;
-	int kk = 0;
-	for (p=0;p<n;p++) {
-		if (s2[p] == 0) good[p] = 0;
-		else {
-			good[p] = 1;
-			kk++;
-		}
-	}
-	for (p=0;p<n;p++) {
-		s1[p] /= kk;
-		s2[p] /= kk;
-		sd[p] = s2[p] - s1[p]*s1[p];
-		if (good[p] == 1 && sd[p] > 1.0e-8*s2[p]) k++;
-		else good[p] = 0;
-	}
-	for (p=0;p<n;p++) {
-		sd[p] = sqrt(kk*sd[p]);
-		if (good[p] == 1) d[p] = 1.0/sd[p];
-		else d[p] = 0;
-		c[p] = s1[p]*good[p];
-		r[p] *= good[p];
-	}
-
-	double *al = (double *) malloc((maxiter+2)*sizeof(double));
-	double *bet = (double *) malloc((maxiter+2)*sizeof(double));
-	double *diag = (double *) malloc((maxiter+2)*sizeof(double));
-	double *diag2 = (double *) malloc((maxiter+2)*sizeof(double));
-	double **q = (double **) malloc((maxiter+2)*sizeof(double *));
-	double *u = (double *) malloc(n*sizeof(double));
-	double *work = (double *) malloc((maxiter+2)*(maxiter+2)*sizeof(double));
-	double *z = (double *) malloc((maxiter+2)*(maxiter+2)*sizeof(double));
-
-	q[0] = (double *) malloc(n*sizeof(double));
-	for (p=0;p<n;p++) q[0][p] = 0;
-	bet[0] = norm(r,n);
-	lapack_int jj,info,ldz;
-	char compz = 'I';
-//	char compz = 'V';
-	int j0;
-	double dev;
-	for (j0=1;j0<maxiter;j0++) {
-		q[j0] = (double *) malloc(n*sizeof(double));
-		for (p=0;p<n;p++) q[j0][p] = r[p]/bet[j0-1];
-		fullMul(i,j,x,m,q[j0],n,u,good,c,d,threads,space);
-		for (p=0;p<n;p++) r[p] = u[p] - bet[j0-1]*q[j0-1][p];
-		al[j0] = dot(q[j0],r,n);
-		for (p=0;p<n;p++) r[p] = r[p] - al[j0]*q[j0][p];
-		bet[j0] = norm(r,n);
-		if (j0 > 2) {
-			double del=0;
-			for (p=0;p<j0;p++) {
-				diag[p] = al[p+1];
-				if (diag[p] > del) del = diag[p];
-				diag2[p] = bet[p+1];
-			}
-			for (p=0;p<j0;p++) diag[p] += 0.1*del;
-			jj = j0;
-			ldz = j0;
-			info = 0;
-			LAPACK_dpteqr(&compz,&jj,diag,diag2,z,&ldz,work,&info);
-			if (info != 0) return(100000+info);
-			if (j0 >= nv+2) {
-			double gap = diag[nv-1] - diag[nv];
-				dev = 0;
-//				for (p=0;p<nv+1;p++) if (dev < fabs(z[p*j0+j0-1])) dev = fabs(z[p*j0+j0-1]);
-				for (p=0;p<nv;p++) if (dev < fabs(z[p*j0+j0-1])) dev = fabs(z[p*j0+j0-1]);
-				if (dev*diag[0]/gap < tol) break;
-			}
-			double *y = (double *) malloc(n*sizeof(double));
-			for (p=0;p<j0 && p < nv+2;p++) {
-				if (fabs(z[p*j0+j0-1]) < diag[0]*eps) {
-					for (int ii=0; ii<n; ii++) {
-						y[ii] = 0;
-						for (int junk=0;junk <j0;junk++) y[ii] = y[ii] + q[junk+1][ii]*z[p*j0+junk];
-					}
-					normalize(y,n);
-					double s = dot(r,y,n);
-					for (int ii=0;ii<n;ii++) r[ii] = r[ii] - s*y[ii];
-				}
-			}
-			bet[j0] = norm(r,n);
-		}
-		for (p=0;p<n;p++) r[p] = r[p]*good[p];
-	}
-	int over = 0;
-	if (j0 == maxiter) over = 1;
-	j0 -= over;
-	double del=0;
-        for (p=0;p<j0;p++) {
-        	diag[p] = al[p+1];
-                if (diag[p] > del) del = diag[p];
-                diag2[p] = bet[p+1];
-	}
-	for (p=0;p<j0;p++) diag[p] += 0.1*del;
-	jj = j0;
-	ldz = j0;
-	info = 0;
-	LAPACK_dpteqr(&compz,&jj,diag,diag2,z,&ldz,work,&info);
-	if (info != 0) return(200000+info);
-	for (int ii=0;ii<nv+2;ii++) lam[ii] = diag[ii]-0.1*del;
-	for (int pos=0;pos<nv+2;pos++) {
-		for (p=0;p<n;p++) {
-			if (good[p] == 0) {
-				ev[pos][p]=NAN;
-				continue;
-			}
-			ev[pos][p]=0;
-			for (int junk=0;junk <j0;junk++) ev[pos][p] += q[junk+1][p]*z[pos*j0+junk];
-		}
-	}
-	*er = dev;
-	*N = n;
-	return(j0+over);
+    if (m < 0 || nv <= 0 || nv > maxiter-3 || threads <= 0 || !std::isfinite(tol) || tol <= 0 ||
+        !std::isfinite(eps) || eps <= 0 || *N > unsigned(std::numeric_limits<int>::max()))
+        throw std::runtime_error("invalid Lanczos solver arguments");
+    int n = *N;
+    if (!n) {
+        for (long p=0; p<m; ++p) n = std::max(n, int(std::max(i[p],j[p]))+1);
+        *N = n;
+    }
+    if (n <= 0) return 300001;
+    std::vector<double> good, mean, d;
+    int active = possum::correlationStatistics(m,i,j,x,n,good,mean,d);
+    if (active < nv) return 300001;
+    std::vector<std::vector<double> > buffers(threads, std::vector<double>(n));
+    std::vector<double *> space(threads);
+    for (int t=0; t<threads; ++t) space[t] = buffers[t].data();
+    std::vector<double> temp1(n), temp2(n), u(n), y(n);
+    auto multiply = [&](const double *a, double *result) {
+        for (int p=0; p<n; ++p) temp1[p] = d[p]*a[p];
+        utmvMul(i,j,x,m,temp1.data(),n,temp2.data(),threads,space.data());
+        double z = possum::vectorDot(temp1.data(),mean.data(),n);
+        for (int p=0; p<n; ++p) temp2[p] -= good[p]*z;
+        utmvMul(i,j,x,m,temp2.data(),n,temp1.data(),threads,space.data());
+        z = possum::vectorDot(good.data(),temp2.data(),n);
+        for (int p=0; p<n; ++p) result[p] = d[p]*(temp1[p]-mean[p]*z);
+    };
+    // A deterministic, nonconstant start avoids an all-ones vector lying in
+    // the nullspace of a centered correlation matrix.
+    unsigned int seed = 1234563;
+    for (int p=0; p<n; ++p) {
+        seed = 1664525u*seed+1013904223u;
+        r[p] = good[p]*(double(seed)/4294967296.0-0.5);
+    }
+    possum::unitVector(r,n);
+    const int limit = std::min(maxiter,active);
+    std::vector<std::vector<double> > q;
+    std::vector<double> alpha, beta, diagonal, offDiagonal, z;
+    double residual = std::numeric_limits<double>::infinity();
+    int steps = 0;
+    auto diagonalize = [&]() {
+        diagonal = alpha;
+        offDiagonal = beta;
+        z.resize(size_t(steps)*steps);
+        // A symmetric tridiagonal routine accepts semidefinite and rank-
+        // deficient matrices; dpteqr incorrectly required positive definiteness.
+        return LAPACKE_dstev(LAPACK_COL_MAJOR,'V',steps,diagonal.data(),offDiagonal.data(),z.data(),steps);
+    };
+    for (int step=0; step<limit; ++step) {
+        q.push_back(std::vector<double>(r,r+n));
+        multiply(q.back().data(),u.data());
+        for (int p=0; p<n; ++p) r[p] = u[p]-(step ? beta[step-1]*q[step-1][p] : 0);
+        double a = possum::vectorDot(q.back().data(),r,n);
+        alpha.push_back(a);
+        for (int p=0; p<n; ++p) r[p] -= a*q.back()[p];
+        // Local reorthogonalization controls cancellation in the recurrence.
+        for (int previous=std::max(0,step-1); previous<=step; ++previous) {
+            double projection = possum::vectorDot(q[previous].data(),r,n);
+            for (int p=0; p<n; ++p) r[p] -= projection*q[previous][p];
+        }
+        double b = possum::vectorNorm(r,n);
+        beta.push_back(b);
+        steps = step+1;
+        int info = diagonalize();
+        if (info) return 100000+info;
+        if (steps >= nv) {
+            residual = 0;
+            for (int v=0; v<nv; ++v)
+                residual = std::max(residual,b*std::fabs(z[size_t(steps-1-v)*steps+steps-1]));
+            double gap = steps > nv ? diagonal[steps-nv]-diagonal[steps-nv-1] : 0;
+            if (gap > 0 && residual <= tol*gap) break;
+        }
+        if (b <= 64*std::numeric_limits<double>::epsilon()*std::max(1.0,std::fabs(a))) break;
+        // Selectively remove converged Ritz vectors from the next residual.
+        for (int v=0; v<std::min(steps,nv+2); ++v) {
+            int column = steps-1-v;
+            if (b*std::fabs(z[size_t(column)*steps+steps-1]) > eps*std::max(1.0,std::fabs(diagonal.back()))) continue;
+            std::fill(y.begin(),y.end(),0.0);
+            for (int k=0; k<steps; ++k)
+                for (int p=0; p<n; ++p) y[p] += q[k][p]*z[size_t(column)*steps+k];
+            if (!possum::unitVector(y.data(),n)) continue;
+            double projection = possum::vectorDot(r,y.data(),n);
+            for (int p=0; p<n; ++p) r[p] -= projection*y[p];
+        }
+        b = possum::vectorNorm(r,n);
+        beta.back() = b;
+        if (b <= 64*std::numeric_limits<double>::epsilon()*std::max(1.0,std::fabs(a))) break;
+        for (int p=0; p<n; ++p) r[p] /= b;
+    }
+    if (steps < nv) return 300001;
+    for (int v=0; v<nv+2; ++v) {
+        int column = steps-1-v;
+        lam[v] = column >= 0 ? diagonal[column] : 0.0;
+        for (int p=0; p<n; ++p) {
+            ev[v][p] = good[p] ? 0.0 : std::numeric_limits<double>::quiet_NaN();
+            if (good[p] && column >= 0)
+                for (int k=0; k<steps; ++k) ev[v][p] += q[k][p]*z[size_t(column)*steps+k];
+        }
+    }
+    *er = residual;
+    return steps;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-				
-
-

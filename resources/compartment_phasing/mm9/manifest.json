@@ -1,0 +1,240 @@
+{
+  "assembly": "mm9",
+  "chromosomes": [
+    "chr1",
+    "chr2",
+    "chr3",
+    "chr4",
+    "chr5",
+    "chr6",
+    "chr7",
+    "chr8",
+    "chr9",
+    "chr10",
+    "chr11",
+    "chr12",
+    "chr13",
+    "chr14",
+    "chr15",
+    "chr16",
+    "chr17",
+    "chr18",
+    "chr19",
+    "chrX",
+    "chrY",
+    "chrM"
+  ],
+  "coordinates": "zero-based, half-open",
+  "files": {
+    "chrom.sizes": {
+      "bytes": 331,
+      "sha256": "66fb20832c88881ba92624e661d6355ff8e33bd6bf8b0f2c991b90924e48305e"
+    },
+    "gc.100bp.counts.bin.gz": {
+      "bytes": 20980701,
+      "sha256": "b1b7d85255ebebf8a62fb85ca122f229359b630c0e33178b04e009d7bbd89a09"
+    },
+    "refseq.coverage.bedGraph.gz": {
+      "bytes": 300728,
+      "sha256": "7d29ad5b49769a3c680ce3df7a655dbd9b08cc0e8eb580f8cbd76873bb3c730f"
+    },
+    "refseq.genes.bed.gz": {
+      "bytes": 370590,
+      "sha256": "be3efea1cf4d9972bc1f58770898efab3183c87d20fd9d00e3a181f4e766ed72"
+    }
+  },
+  "gc_bin_size": 100,
+  "gc_statistics": {
+    "chr1": {
+      "acgt_bases": 191477429,
+      "bins": 1971955,
+      "gc_bases": 78769072,
+      "length": 197195432,
+      "no_sequence_bins": 57157
+    },
+    "chr10": {
+      "acgt_bases": 126847849,
+      "bins": 1299933,
+      "gc_bases": 52516116,
+      "length": 129993255,
+      "no_sequence_bins": 31428
+    },
+    "chr11": {
+      "acgt_bases": 118743556,
+      "bins": 1218439,
+      "gc_bases": 52026137,
+      "length": 121843856,
+      "no_sequence_bins": 30998
+    },
+    "chr12": {
+      "acgt_bases": 117459310,
+      "bins": 1212576,
+      "gc_bases": 49044862,
+      "length": 121257530,
+      "no_sequence_bins": 37957
+    },
+    "chr13": {
+      "acgt_bases": 116370904,
+      "bins": 1202844,
+      "gc_bases": 48426568,
+      "length": 120284312,
+      "no_sequence_bins": 39105
+    },
+    "chr14": {
+      "acgt_bases": 121635309,
+      "bins": 1251949,
+      "gc_bases": 50062879,
+      "length": 125194864,
+      "no_sequence_bins": 35555
+    },
+    "chr15": {
+      "acgt_bases": 100439974,
+      "bins": 1034950,
+      "gc_bases": 42147171,
+      "length": 103494974,
+      "no_sequence_bins": 30548
+    },
+    "chr16": {
+      "acgt_bases": 95004929,
+      "bins": 983192,
+      "gc_bases": 38893193,
+      "length": 98319150,
+      "no_sequence_bins": 33129
+    },
+    "chr17": {
+      "acgt_bases": 91898202,
+      "bins": 952727,
+      "gc_bases": 39233520,
+      "length": 95272651,
+      "no_sequence_bins": 33703
+    },
+    "chr18": {
+      "acgt_bases": 87600091,
+      "bins": 907721,
+      "gc_bases": 36298788,
+      "length": 90772031,
+      "no_sequence_bins": 31707
+    },
+    "chr19": {
+      "acgt_bases": 58142230,
+      "bins": 613425,
+      "gc_bases": 24845753,
+      "length": 61342430,
+      "no_sequence_bins": 31999
+    },
+    "chr2": {
+      "acgt_bases": 178392072,
+      "bins": 1817481,
+      "gc_bases": 75072353,
+      "length": 181748087,
+      "no_sequence_bins": 33537
+    },
+    "chr3": {
+      "acgt_bases": 156393912,
+      "bins": 1595998,
+      "gc_bases": 63261607,
+      "length": 159599783,
+      "no_sequence_bins": 32051
+    },
+    "chr4": {
+      "acgt_bases": 151886844,
+      "bins": 1556302,
+      "gc_bases": 64247385,
+      "length": 155630120,
+      "no_sequence_bins": 37404
+    },
+    "chr5": {
+      "acgt_bases": 147721185,
+      "bins": 1525373,
+      "gc_bases": 62832920,
+      "length": 152537259,
+      "no_sequence_bins": 48117
+    },
+    "chr6": {
+      "acgt_bases": 146317034,
+      "bins": 1495171,
+      "gc_bases": 60598803,
+      "length": 149517037,
+      "no_sequence_bins": 31996
+    },
+    "chr7": {
+      "acgt_bases": 141878210,
+      "bins": 1525246,
+      "gc_bases": 61063812,
+      "length": 152524553,
+      "no_sequence_bins": 106403
+    },
+    "chr8": {
+      "acgt_bases": 124796771,
+      "bins": 1317389,
+      "gc_bases": 52873525,
+      "length": 131738871,
+      "no_sequence_bins": 69413
+    },
+    "chr9": {
+      "acgt_bases": 120720222,
+      "bins": 1240762,
+      "gc_bases": 51563850,
+      "length": 124076172,
+      "no_sequence_bins": 33498
+    },
+    "chrM": {
+      "acgt_bases": 16299,
+      "bins": 163,
+      "gc_bases": 5989,
+      "length": 16299,
+      "no_sequence_bins": 0
+    },
+    "chrX": {
+      "acgt_bases": 162080892,
+      "bins": 1666503,
+      "gc_bases": 63609273,
+      "length": 166650296,
+      "no_sequence_bins": 45618
+    },
+    "chrY": {
+      "acgt_bases": 2702555,
+      "bins": 159026,
+      "gc_bases": 1052856,
+      "length": 15902555,
+      "no_sequence_bins": 131998
+    }
+  },
+  "refseq_policy": "UCSC refGene NM_/NR_ transcripts; connected gene loci; union gene-body coverage",
+  "refseq_statistics": {
+    "accepted_transcript_rows": 46881,
+    "coding_transcript_rows": 38634,
+    "covered_bp": 1048197111,
+    "excluded_noncanonical_rows": 366,
+    "gene_loci": 27111,
+    "noncoding_transcript_rows": 8247
+  },
+  "schema_version": 1,
+  "sequence_policy": "canonical chromosomes, including X/Y/M; soft masks included; N excluded",
+  "sources": {
+    "chrom_sizes": {
+      "bytes": 584,
+      "etag": "\"248-435a4e82cc740\"",
+      "last_modified": "Thu, 19 Jul 2007 21:58:13 GMT",
+      "retrieved_at_utc": "2026-10-24T03:25:34.378259+00:00",
+      "sha256": "5737a0a2a5eb712bba0e33565e8d6f2c68c9b89bcfa992dc22da0c8def5e8dce",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm9/bigZips/mm9.chrom.sizes"
+    },
+    "refseq": {
+      "bytes": 4813469,
+      "etag": "\"49729d-5ad79a68d8886\"",
+      "last_modified": "Sat, 22 Aug 2020 16:14:40 GMT",
+      "retrieved_at_utc": "2026-10-24T03:25:35.589482+00:00",
+      "sha256": "7eb239607afa72581e1eebb9c90156e8d83d871953118357b93d39df88208ac4",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm9/database/refGene.txt.gz"
+    },
+    "sequence": {
+      "bytes": 712923274,
+      "etag": "\"2a7e588a-435cbedcb4ec0\"",
+      "last_modified": "Sat, 21 Jul 2007 20:31:31 GMT",
+      "retrieved_at_utc": "2026-10-24T03:36:40.641400+00:00",
+      "sha256": "27c4d3d0f35b8c04ddf9a6e9c658dc4b0c5f2a9ac91188105f4aae5dbae34439",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm9/bigZips/mm9.2bit"
+    }
+  }
+}

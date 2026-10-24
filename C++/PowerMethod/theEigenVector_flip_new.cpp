@@ -6,11 +6,14 @@
 #include <time.h>
 #include <cmath>
 #include <unistd.h>
+#include <getopt.h>
+#include "../common/CompartmentOrientation.h"
+#include "../common/Arguments.h"
 using namespace std;
 
 int bestEigen(long m,int *i,int *j,double *x,int *N,double *l1,double *l2,double *a1,double *a2,double *ev,double *er,double tol,int maxiter,int threads);
 
-int flipSign(const char *genome, double *x, int n, char *chr, int binsize);
+
 
 static void usage(const char *argv0)
 {
@@ -18,10 +21,11 @@ static void usage(const char *argv0)
   fprintf(stderr, "  <hicfile>: hic file\n");
   fprintf(stderr, "  <chromosome>: chromosomee\n");
   fprintf(stderr, "  <outfile>: eigenvector output  file\n");
-  fprintf(stderr, "  <resolution>: resolution in bp\n");
+  fprintf(stderr, "  <resolution>: resolution in bp\n  -p, --phasing-track FILE: activity bedGraph (higher = A)\n");
+  possum::phasingUsage();
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
 	string norm("NONE");
 	string unit("BP");
 	string ob("oe");
@@ -34,9 +38,18 @@ int main(int argc, char *argv[]) {
 	int verb = 1;
 	int N;
 	int opt;
+	string phasingTrack;
+    possum::PhasingOptions phasingOptions;
 
-	while ((opt = getopt(argc, argv, "ot:I:T:n:v:h")) != -1) {
-		switch (opt) {
+    static option longOptions[] = {
+        POSSUM_PHASING_LONG_OPTIONS
+        {"phasing-track", required_argument, NULL, 'p'},
+        {NULL, 0, NULL, 0}
+    };
+	while ((opt = getopt_long(argc, argv, "p:ot:I:T:n:v:h", longOptions, NULL)) != -1) {
+		if (phasingOptions.parse(opt,optarg)) continue;
+        switch (opt) {
+                case 'p': phasingTrack = optarg; break;
 				case 'o':
 					ob = "observed";
 					break;
@@ -44,13 +57,13 @@ int main(int argc, char *argv[]) {
 					tol = atof(optarg);
 					break;
 				case 'I':
-					maxiter=atoi(optarg);
+					maxiter=possum::positiveInt(optarg);
 					break;
 				case 'n':
 					norm=optarg;
 					break;
 				case 'T':
-					threads=atoi(optarg);
+					threads=possum::positiveInt(optarg);
 					break;
 				case 'v':
 					verb=atoi(optarg);
@@ -70,7 +83,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	string fname = argv[optind++];
-	fin.open(fname, fstream::in);
+	fin.open(fname, ios::in | ios::binary);
 	if (fin.is_open()) {
 		if (verb) printf("Reading hic file from %s\n", argv[optind-1]);
 	}
@@ -80,7 +93,9 @@ int main(int argc, char *argv[]) {
 	  }
 	string chrom(argv[optind++]);
 	char *out_name = argv[optind++];
-	int binsize = atoi(argv[optind++]);
+	int binsize = possum::positiveInt(argv[optind++]);
+    if (binsize <= 0 || threads <= 0 || maxiter <= 0 || !std::isfinite(tol) || tol <= 0)
+        throw std::runtime_error("resolution, threads, iterations, and tolerance must be positive");
 	FILE *fout = fopen(out_name,"w");
 	if (fout==NULL) {
 		fprintf(stderr, "Error! File %s cannot be opened for writing\n", argv[optind-1]);
@@ -104,19 +119,20 @@ int main(int argc, char *argv[]) {
 
     chromosomeMap = readHeader(fin, master, genomeID, numChromosomes, version, nviPosition, nviLength);
     map<string,chromosome>::iterator itr0 = chromosomeMap.find(chrom);
-    if (itr0 != chromosomeMap.end()) N = (int) ceil(itr0->second.length/((double) binsize));
+    if (itr0 == chromosomeMap.end()) {
+        for (itr0 = chromosomeMap.begin(); itr0 != chromosomeMap.end(); ++itr0)
+            if (possum::chromosomeKey(itr0->first) == possum::chromosomeKey(chrom)) break;
+    }
+    if (itr0 != chromosomeMap.end()) chrom = itr0->first;
+    if (itr0 != chromosomeMap.end()) N = possum::binCount(itr0->second.length, binsize);
     	else {
 		cout << "chromosome " << chrom << " is not found" << endl;
 		exit(1);
 	}
 	fin.close();
 
-        string hg19("hg19");
-        string hg38("hg38");
-        if (genomeID != hg19 && genomeID != hg38) if (verb) {
-                cout << genomeID;
-                cout << " is not currently supported; no sign flip will be attempted!" << endl << endl;
-        }
+    possum::CompartmentOrientation orientation(genomeID, phasingTrack, phasingOptions, possum::phasingChromosomes(chromosomeMap));
+    orientation.setReport(std::string(out_name) + ".orientation.tsv");
 
 	clock_gettime(CLOCK_REALTIME,&t0);
 	vector<contactRecord> records = straw(ob, norm, fname, chrom, chrom, unit, binsize);
@@ -125,6 +141,9 @@ int main(int argc, char *argv[]) {
 	int *jj = (int *) malloc(nonZer*sizeof(int));
 	double *xx = (double *) malloc(nonZer*sizeof(double));
 	for (long k=0; k<nonZer; k++) {
+        if (records[k].binX < 0 || records[k].binY < 0 ||
+            records[k].binX >= itr0->second.length || records[k].binY >= itr0->second.length)
+            throw std::runtime_error("contact coordinate outside chromosome");
 				ii[k] = records[k].binX/binsize; 
 				jj[k] = records[k].binY/binsize; 
 				xx[k] = (double) records[k].counts;
@@ -161,19 +180,10 @@ int main(int argc, char *argv[]) {
 		printf("lam1 = %g; lam2 = %g; lam1/lam2 = %g; er = %g; error in EV = %g\n",l1,l2,l1/l2,er,er/(l1-l2));
 	}
 
-	        char *chr = const_cast<char*> (chrom.c_str());
-
-              char *chr1 = (char *) malloc((strlen(chr)+4)*sizeof(char));
-              if (!strstr(chr,"chr")) strcpy(chr1,"chr");
-              else strcpy(chr1,"");
-              strcat(chr1,chr);
-              if (strcmp(chr1,"chrMT") == 0)  strcpy(chr1,"chrM");
-
-	char *genome1 = const_cast<char*> (genomeID.c_str());
-        if (strcmp(chr1,"chrY")!=0 && strcmp(chr1,"chrM")!=0 && (100000 % binsize == 0)) int junk = flipSign(genome1,ev,N,chr1,binsize);
+    orientation.orient(ev, N, chrom, binsize, verb, 1, itr0->second.length);
 
 	for (int j=0;j<N;j++) {
-		if (!std::isnan(ev[j])) fprintf(fout,"%20.10f\n",ev[j]);
+		if (!std::isnan(ev[j])) fprintf(fout,"%.17g\n",ev[j]);
 		else fprintf(fout,"%20s\n","NaN");
 	}
 	fclose(fout);
@@ -181,4 +191,7 @@ int main(int argc, char *argv[]) {
 	// Returning the iteration count made every successful scripted run look
 	// like a failure to shells using `set -e`.
 	return 0;
+} catch (const std::exception &error) {
+    std::cerr << "Error: " << error.what() << std::endl;
+    return EXIT_FAILURE;
 }

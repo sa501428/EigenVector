@@ -1,3 +1,8 @@
+Use the [CMake build](../README.md#build-and-test) for current Straw versions,
+including v10. The manual commands below describe older single-source Straw builds.
+Manual builds must pass `--phasing-dir` or set `POSSUM_PHASING_DIR` to the
+repository reference directory; CMake configures that default automatically.
+
 Very fast and memory efficient functions for the computation of the principal eigenvector of a correlation matrix of a given matrix (usually originatimg from HiC).  
 
 There are two ways to read the input file: either from hic file or from an ASCII file produced by juicer tools dump.
@@ -18,7 +23,17 @@ To produce eigenvector for every chromosome in the hic file in the wiggle (wig) 
 
 Run `./GWevIntra.exe` to see the usage  
 
-**Note:** if run on hg19 or hg38 genome with a resolution which is a divisor of 100,000, these two functions will flip the sign of the eigenvector if necessary so that positive sign corresponds to A and negative sighn to B compartment.  
+**A/B orientation:** Both executables use the shared orientation implementation
+at any positive resolution supported by the Hi-C file, including 500 bp and 1 kb.
+The default uses bundled GC content with a RefSeq agreement check for hg19, hg38,
+mm9, and mm10. Genome IDs may have prefixes/suffixes; chromosome names and exact
+nuclear sizes confirm the ID or identify the assembly when the ID is inconclusive.
+Use `--assembly NAME` to override it, or `--phasing-method refseq` for exact gene
+coverage at any resolution. Each output gets an `.orientation.tsv` report.
+Use `-p activity.bedgraph` or `--phasing-track activity.bedgraph` for an activity
+reference on any assembly/chromosome. Unresolved signs are reported and left
+unchanged. See the [shared reference format and limitations](../README.md#ab-sign-orientation-at-any-resolution).
+Genome-wide output includes Y and mitochondrial entries.
 
 **Reading from file produced by juicer tools dump**  
 First of all run juicer tools dump to produce the file, say **dump.out**. Here you can choose either observed or oe (observed over expected) and choose the desired normalization.

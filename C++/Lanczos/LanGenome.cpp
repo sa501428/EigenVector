@@ -32,6 +32,8 @@
 #include <vector>
 
 #include <straw.h>
+#include "../common/CompartmentOrientation.h"
+#include "../common/Arguments.h"
 
 using namespace std;
 
@@ -58,11 +60,15 @@ struct Options {
     double coverageZCutoff = -2.5;
     double maxTopOnePercentEnergy = 0.5;
     string chromosomeList;
+    string phasingTrack;
+    possum::PhasingOptions phasingOptions;
+    string genomeID;
+    possum::PhasingChromosomes chromosomeSizes;
 };
 
 struct ChromosomeInfo {
     string name;
-    long length;
+    int64_t length;
     string base;
 };
 
@@ -99,6 +105,8 @@ void usage(const char *program) {
         "Runs chromosome-specific Lanczos calculations in parallel and merges them.\n\n"
         "Options:\n"
         "  --rescue            Enable 50 kb-guided EV1-EV10 rescue\n"
+        "  -p, --phasing-track FILE\n"
+        "                      Activity bedGraph for A/B orientation (higher = A)\n"
         "  -r, --resolution N  Output resolution (default: 5000)\n"
         "  -n, --normalization NAME\n"
         "                      Hi-C normalization (default: SCALE)\n"
@@ -120,8 +128,10 @@ void usage(const char *program) {
         "  -h, --help          Show this help\n\n"
         "Normal output: <outbase>.wig\n"
         "Rescue outputs: <outbase>.wig, .lowres_50kb.wig, .Ev1.wig-.Ev10.wig,\n"
-        "                .eigenvalues.tsv, and .rescue.tsv\n",
+        "                .eigenvalues.tsv, and .rescue.tsv\n"
+        "Orientation: <outbase>.orientation.tsv; rescue also keeps candidate/low-resolution reports\n",
         program);
+    possum::phasingUsage();
 }
 
 string toString(int value) {
@@ -248,18 +258,14 @@ bool chromosomeLess(const ChromosomeInfo &a, const ChromosomeInfo &b) {
 }
 
 string displayChromosome(const string &name) {
-    string result = name;
-    if (result.compare(0, 3, "chr") != 0) result = "chr" + result;
-    if (result == "chrMT") result = "chrM";
-    return result;
+    return possum::displayChromosome(name);
 }
 
-vector<ChromosomeInfo> readChromosomes(const string &hicfile) {
+vector<ChromosomeInfo> readChromosomes(const string &hicfile, string &genomeID) {
     ifstream fin(hicfile.c_str(), ios::in | ios::binary);
     if (!fin) throw runtime_error("cannot open Hi-C file: " + hicfile);
 
     int64_t master = 0;
-    string genomeID;
     int numChromosomes = 0;
     int version = 0;
     int64_t nviPosition = 0;
@@ -271,7 +277,7 @@ vector<ChromosomeInfo> readChromosomes(const string &hicfile) {
     vector<ChromosomeInfo> result;
     for (map<string, chromosome>::const_iterator it = chromosomeMap.begin();
          it != chromosomeMap.end(); ++it) {
-        if (it->second.name == "ALL" || it->second.name == "All") continue;
+        if (possum::isAllChromosome(it->second.name)) continue;
         ChromosomeInfo chr;
         chr.name = it->second.name;
         chr.length = it->second.length;
@@ -421,12 +427,18 @@ bool onlyExpectedSparseFailures(const vector<Job> &jobs) {
     for (size_t i = 0; i < jobs.size(); ++i) {
         if (jobs[i].arguments.size() < 3) return false;
         string base = jobs[i].arguments[jobs[i].arguments.size() - 3];
-        if (readable(base + ".Ev1.wig")) continue;
+        if (readable(base + ".Ev1.wig")) {
+            ifstream workerLog(jobs[i].log.c_str());
+            string line;
+            while (getline(workerLog,line))
+                if (line.find("A/B orientation") != string::npos || line.find("Warning:") != string::npos) cerr << line << endl;
+            continue;
+        }
         ifstream log(jobs[i].log.c_str());
         string contents((istreambuf_iterator<char>(log)), istreambuf_iterator<char>());
-        // LAPACK info=5 is the observed failure for a matrix with too few
-        // independent entries to produce the requested eigensystem.
-        if (contents.find("return code is 100005") == string::npos) return false;
+        // The solver explicitly identifies matrices without enough usable directions.
+        // LAPACK errors are real failures, not evidence of sparsity.
+        if (contents.find("return code is 300001") == string::npos) return false;
     }
     return true;
 }
@@ -437,6 +449,11 @@ vector<string> workerArguments(const string &worker, const Options &options,
                                bool applyCoverageFilter) {
     vector<string> args;
     args.push_back(worker);
+    const auto phasingArguments = options.phasingOptions.arguments();
+    args.insert(args.end(),phasingArguments.begin(),phasingArguments.end());
+    if (!options.phasingTrack.empty()) {
+        args.push_back("-p"); args.push_back(options.phasingTrack);
+    }
     if (options.observed) args.push_back("-o");
     args.push_back("-n"); args.push_back(options.normalization);
     args.push_back("-t"); args.push_back(toString(options.tolerance));
@@ -550,6 +567,28 @@ void replaceFile(const string &partial, const string &destination) {
         throw runtime_error("cannot install output " + destination + ": " +
                             string(strerror(errno)));
     }
+}
+
+void mergeOrientation(const vector<ChromosomeInfo> &chromosomes,
+                      const string &tempDirectory,const string &phase,const string &destination) {
+    string partial = destination + ".partial." + toString(processId());
+    ofstream out(partial);
+    if (!out) throw runtime_error("cannot create orientation report: " + partial);
+    string expectedHeader;
+    for (size_t c = 0; c < chromosomes.size(); ++c) {
+        ostringstream path;
+        path << tempDirectory << '/' << phase << "_chr_" << setw(3) << setfill('0') << c << ".orientation.tsv";
+        ifstream in(path.str());
+        string header,line;
+        if (!in || !getline(in,header)) throw runtime_error("missing worker orientation report: " + path.str());
+        if (expectedHeader.empty()) { expectedHeader = header; out << header << '\n'; }
+        if (header != expectedHeader) throw runtime_error("inconsistent worker orientation reports");
+        while (getline(in,line)) if (!line.empty()) out << line << '\n';
+        if (!in.eof()) throw runtime_error("cannot read worker orientation report");
+    }
+    out.close();
+    if (!out) throw runtime_error("failed writing orientation report");
+    replaceFile(partial,destination);
 }
 
 void mergeWigs(const vector<ChromosomeInfo> &chromosomes,
@@ -689,6 +728,8 @@ VectorMetrics calculateVectorMetrics(const vector<double> &values, int resolutio
 void writeRescue(const vector<ChromosomeInfo> &chromosomes,
                  const string &tempDirectory, const Options &options,
                  const string &outbase) {
+    possum::CompartmentOrientation orientation(options.genomeID,options.phasingTrack,options.phasingOptions,options.chromosomeSizes);
+    orientation.setReport(outbase + ".orientation.tsv");
     string wigDestination = outbase + ".wig";
     string wigPartial = wigDestination + ".partial." + toString(processId());
     string reportDestination = outbase + ".rescue.tsv";
@@ -714,7 +755,7 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
            << "\tcoverage_removed_bins\tcoverage_retained_bins";
     for (int ev = 1; ev <= kRescueEigenvectors; ++ev) report << "\tcorr_EV" << ev;
     for (int ev = 1; ev <= kRescueEigenvectors; ++ev) report << "\tlocalized_EV" << ev;
-    report << '\n' << setprecision(17);
+    report << "\tapplied_sign\torientation_source\n" << setprecision(17);
     eigen << "chromosome\tresolution\tfirst_k\tlambda_k\tlambda_k_plus_1\tlambda_k_plus_2"
           << "\tgap_k\tgap_k_plus_1\tlambda_k_over_gap_k"
           << "\tlambda_k_plus_1_over_gap_k_plus_1\tmin_ratio\ttolerance"
@@ -730,7 +771,12 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
         string lowPath = lowBase.str() + ".Ev1.wig";
         bool hasLowReference = readable(lowPath);
         vector<double> low;
-        if (hasLowReference) low = readWig(lowPath);
+        if (hasLowReference) {
+            low = readWig(lowPath);
+            hasLowReference = any_of(low.begin(),low.end(),[](double value) {
+                return isfinite(value) && value != 0.0;
+            });
+        }
         vector<double> correlations(kRescueEigenvectors,
                                     numeric_limits<double>::quiet_NaN());
         vector<vector<double> > high(kRescueEigenvectors);
@@ -760,7 +806,10 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
             }
         }
         string status = "passed";
-        if (!hasLowReference) {
+        if (!isfinite(metrics[0].topOnePercentEnergy)) {
+            selected = 0;
+            status = "no_high_resolution_eigenvector";
+        } else if (!hasLowReference) {
             selected = 0;
             status = "no_low_resolution_reference";
         } else if (selected < 0) {
@@ -776,7 +825,13 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
             }
         }
         double selectedCorrelation = correlations[selected];
-        double sign = isfinite(selectedCorrelation) && selectedCorrelation < 0.0 ? -1.0 : 1.0;
+        auto phase = orientation.evaluate({{high[selected].data(),static_cast<int>(high[selected].size()),
+            chromosomes[c].name,chromosomes[c].length}},options.resolution);
+        double sign = phase.sign < 0 ? -1.0 : 1.0;
+        string orientationSource = phase.sign ? phase.source : phase.status;
+        // Reference matching selects a component but cannot establish A/B
+        // identity when the biological phasing evidence is ambiguous.
+        orientation.record(phase,chromosomes[c].name,options.resolution,selected+1,options.verbosity);
         vector<EigenDiagnostic> diagnostics =
             readEigenDiagnostics(chromosomes[c].base + ".eigenvalues.tsv");
         if (diagnostics.size() < kRescueEigenvectors)
@@ -820,7 +875,7 @@ void writeRescue(const vector<ChromosomeInfo> &chromosomes,
             report << '\t' << correlations[ev];
         for (int ev = 0; ev < kRescueEigenvectors; ++ev)
             report << '\t' << (metrics[ev].localized ? 1 : 0);
-        report << '\n';
+        report << '\t' << sign << '\t' << orientationSource << '\n';
         for (int ev = 0; ev < kRescueEigenvectors; ++ev) {
             const EigenDiagnostic &d = diagnostics[ev];
             eigen << displayChrom << '\t' << options.resolution << '\t' << d.firstK
@@ -860,6 +915,7 @@ void cleanup(const vector<ChromosomeInfo> &chromosomes,
             for (int ev = 1; ev <= count; ++ev)
                 remove((base.str() + ".Ev" + toString(ev) + ".wig").c_str());
             remove((base.str() + ".eigenvalues.tsv").c_str());
+            remove((base.str() + ".orientation.tsv").c_str());
             remove((base.str() + ".log").c_str());
         }
     }
@@ -872,7 +928,7 @@ void cleanup(const vector<ChromosomeInfo> &chromosomes,
 
 } // namespace
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv) try {
     Options options;
     unsigned int cpus = thread::hardware_concurrency();
     if (cpus == 0) cpus = 1;
@@ -881,6 +937,8 @@ int main(int argc, char **argv) {
     enum { OPT_RESCUE = 1000, OPT_THRESHOLD, OPT_KEEP_TEMP, OPT_COVERAGE_Z,
            OPT_NO_COVERAGE_FILTER, OPT_MAX_TOP1_ENERGY, OPT_CHROMOSOMES };
     static struct option longOptions[] = {
+        POSSUM_PHASING_LONG_OPTIONS
+        {"phasing-track", required_argument, NULL, 'p'},
         {"rescue", no_argument, NULL, OPT_RESCUE},
         {"resolution", required_argument, NULL, 'r'},
         {"normalization", required_argument, NULL, 'n'},
@@ -902,8 +960,10 @@ int main(int argc, char **argv) {
     };
 
     int option = 0;
-    while ((option = getopt_long(argc, argv, "r:n:oj:T:t:e:I:v:h", longOptions, NULL)) != -1) {
+    while ((option = getopt_long(argc, argv, "p:r:n:oj:T:t:e:I:v:h", longOptions, NULL)) != -1) {
+        if (options.phasingOptions.parse(option,optarg)) continue;
         switch (option) {
+            case 'p': options.phasingTrack = optarg; break;
             case OPT_RESCUE: options.rescue = true; break;
             case OPT_THRESHOLD: options.rescueThreshold = atof(optarg); break;
             case OPT_KEEP_TEMP: options.keepTemp = true; break;
@@ -914,14 +974,14 @@ int main(int argc, char **argv) {
             case OPT_NO_COVERAGE_FILTER: options.coverageFilter = false; break;
             case OPT_MAX_TOP1_ENERGY: options.maxTopOnePercentEnergy = atof(optarg); break;
             case OPT_CHROMOSOMES: options.chromosomeList = optarg; break;
-            case 'r': options.resolution = atoi(optarg); break;
+            case 'r': options.resolution = possum::positiveInt(optarg); break;
             case 'n': options.normalization = optarg; break;
             case 'o': options.observed = true; break;
-            case 'j': options.jobs = atoi(optarg); break;
-            case 'T': options.solverThreads = atoi(optarg); break;
+            case 'j': options.jobs = possum::positiveInt(optarg); break;
+            case 'T': options.solverThreads = possum::positiveInt(optarg); break;
             case 't': options.tolerance = atof(optarg); break;
             case 'e': options.epsilon = atof(optarg); break;
-            case 'I': options.maxIterations = atoi(optarg); break;
+            case 'I': options.maxIterations = possum::positiveInt(optarg); break;
             case 'v': options.verbosity = atoi(optarg); break;
             case 'h': usage(argv[0]); return EXIT_SUCCESS;
             default: usage(argv[0]); return EXIT_FAILURE;
@@ -934,8 +994,12 @@ int main(int argc, char **argv) {
     }
     string hicfile = argv[optind++];
     string outbase = argv[optind++];
-    if (optind < argc) options.resolution = atoi(argv[optind++]);
+    if (optind < argc) options.resolution = possum::positiveInt(argv[optind++]);
     if (options.resolution <= 0 || options.jobs <= 0 || options.solverThreads <= 0 ||
+        !isfinite(options.tolerance) || options.tolerance <= 0 ||
+        !isfinite(options.epsilon) || options.epsilon <= 0 ||
+        !isfinite(options.rescueThreshold) || !isfinite(options.coverageZCutoff) ||
+        !isfinite(options.maxTopOnePercentEnergy) ||
         options.maxIterations <= (options.rescue ? kRescueEigenvectors + 2 : 3) ||
         options.rescueThreshold < 0.0 || options.rescueThreshold > 1.0 ||
         options.coverageZCutoff >= 0.0 || options.maxTopOnePercentEnergy <= 0.0 ||
@@ -959,15 +1023,17 @@ int main(int argc, char **argv) {
 
     string tempDirectory;
     try {
-        vector<ChromosomeInfo> chromosomes = readChromosomes(hicfile);
+        vector<ChromosomeInfo> chromosomes = readChromosomes(hicfile,options.genomeID);
+        for (const auto &chromosome : chromosomes) options.chromosomeSizes[chromosome.name] = chromosome.length;
+        possum::CompartmentOrientation validateTrack(options.genomeID,options.phasingTrack,options.phasingOptions,options.chromosomeSizes);
         if (!options.chromosomeList.empty()) {
             set<string> selected;
             istringstream names(options.chromosomeList);
             string name;
-            while (getline(names, name, ',')) if (!name.empty()) selected.insert(name);
+            while (getline(names, name, ',')) if (!name.empty()) selected.insert(possum::chromosomeKey(name));
             chromosomes.erase(remove_if(chromosomes.begin(), chromosomes.end(),
                 [&](const ChromosomeInfo &chromosome) {
-                    return selected.count(chromosome.name) == 0;
+                    return selected.count(possum::chromosomeKey(chromosome.name)) == 0;
                 }), chromosomes.end());
         }
         if (chromosomes.empty()) throw runtime_error("Hi-C file has no chromosomes");
@@ -992,6 +1058,7 @@ int main(int argc, char **argv) {
                 throw runtime_error("one or more chromosome calculations failed unexpectedly; temporary files retained at " + tempDirectory);
             mergeWigs(chromosomes, "normal", 1, options.resolution,
                       outbase + ".wig", "Lanczos genome-wide EV1", true);
+            mergeOrientation(chromosomes,tempDirectory,"normal",outbase + ".orientation.tsv");
         } else {
             vector<Job> lowJobs = makeJobs(chromosomes, worker, options, hicfile,
                                            tempDirectory, "low",
@@ -1003,7 +1070,7 @@ int main(int argc, char **argv) {
                                             tempDirectory, "high",
                                             options.resolution,
                                             kRescueEigenvectors);
-            if (!runJobs(highJobs, options.jobs, options.verbosity))
+            if (!runJobs(highJobs, options.jobs, options.verbosity) || !onlyExpectedSparseFailures(highJobs))
                 throw runtime_error("one or more high-resolution calculations failed; temporary files retained at " + tempDirectory);
 
             mergeWigs(chromosomes, "low", 1, kLowResolution,
@@ -1013,6 +1080,8 @@ int main(int argc, char **argv) {
                           outbase + ".Ev" + toString(ev) + ".wig",
                           "Lanczos high-resolution EV" + toString(ev));
             writeRescue(chromosomes, tempDirectory, options, outbase);
+            mergeOrientation(chromosomes,tempDirectory,"high",outbase + ".candidates.orientation.tsv");
+            mergeOrientation(chromosomes,tempDirectory,"low",outbase + ".lowres_50kb.orientation.tsv");
         }
 
         if (!options.keepTemp) cleanup(chromosomes, tempDirectory, options.rescue);
@@ -1023,4 +1092,7 @@ int main(int argc, char **argv) {
         cerr << "Lan.exe: " << error.what() << endl;
         return EXIT_FAILURE;
     }
+} catch (const std::exception &error) {
+    cerr << "Lan.exe: " << error.what() << endl;
+    return EXIT_FAILURE;
 }

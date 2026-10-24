@@ -1,77 +1,10 @@
-#!/bin/bash
-
-# Exit on error
-set -e
-
-echo "🔧 Setting up build environment..."
-
-# Install dependencies using apt
-echo "📦 Installing dependencies..."
-sudo apt-get update
-sudo apt-get install -y \
-    build-essential \
-    gcc \
-    g++ \
-    libopenblas-dev \
-    liblapack-dev \
-    liblapacke-dev \
-    libcurl4-openssl-dev \
-    zlib1g-dev \
-    libzstd-dev
-
-# Check if straw is available
-STRAW_PATH="$HOME/straw"
-if [ ! -d "$STRAW_PATH" ]; then
-    echo "⚠️  Warning: straw library not found at $STRAW_PATH"
-    echo "Please install straw library and place it in $STRAW_PATH"
-    echo "or modify this script with the correct path"
-    exit 1
-fi
-
-echo "🔨 Building executables..."
-
-# Common compiler flags
-COMMON_FLAGS="-O2 -Wno-format-security -I/usr/include -I$STRAW_PATH/C++"
-COMMON_LIBS="-L/usr/lib -lz -lzstd -lcurl -lpthread -lopenblas -llapack -llapacke"
-
-# First compile straw library
-echo "Building straw library..."
-g++ $COMMON_FLAGS -c "$STRAW_PATH/C++/straw.cpp" -o straw.o
-
-# Compile chromosome worker
-echo "Building LanChr.exe..."
-g++ $COMMON_FLAGS -std=c++11 -o LanChr.exe \
-    s_fLan.cpp \
-    s_fSOLan.c \
-    s_dthMul.c \
-    hgFlipSign.c \
-    straw.o \
-    -I. \
-    $COMMON_LIBS
-
-# Compile genome-wide chromosome-parallel driver
-echo "Building Lan.exe..."
-g++ $COMMON_FLAGS -std=c++11 -o Lan.exe \
-    LanGenome.cpp \
-    straw.o \
-    $COMMON_LIBS
-
-# Compile GWev.exe
-echo "Building GWev.exe..."
-g++ $COMMON_FLAGS -std=c++11 -o GWev.exe \
-    s_fGW.cpp \
-    getGWMatrix.cpp \
-    s_fSOLan.c \
-    s_dthMul.c \
-    straw.o \
-    $COMMON_LIBS
-
-# Clean up object files
-rm -f straw.o
-
-echo "✅ Build completed successfully!"
-echo
-echo "You can now run:"
-echo "  ./Lan.exe    - for chromosome-parallel genome-wide analysis"
-echo "  ./LanChr.exe - internal/single-chromosome analysis"
-echo "  ./GWev.exe - for genome-wide analysis"
+#!/usr/bin/env bash
+# Dependencies: CMake, C++17 compiler, curl, zlib, zstd, BLAS, LAPACK/LAPACKE.
+# Set STRAW_DIR to the directory containing straw.h/straw.cpp if needed.
+set -euo pipefail
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+args=()
+if [[ -n "${STRAW_DIR:-}" ]]; then args+=("-DSTRAW_DIR=$STRAW_DIR"); fi
+cmake -S "$script_dir/.." -B "$script_dir/../build" \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$script_dir" "${args[@]}" "$@"
+cmake --build "$script_dir/../build" --parallel

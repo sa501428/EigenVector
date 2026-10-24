@@ -3,3 +3,6 @@ C++/.DS_Store
 C++/Lanczos/.DS_Store
 /C++/build-v10-cmake
 /C++/build-v10
+
+/C++/build/
+__pycache__/

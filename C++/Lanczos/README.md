@@ -4,47 +4,24 @@ This package provides tools for computing leading eigenvectors of contact matric
 
 ## Building the Software
 
-### Prerequisites
+Use the [shared CMake build and regression tests](../README.md#build-and-test).
+The Linux/macOS/MinGW wrapper scripts call the same CMake build. Install the
+dependencies first; the scripts do not install system packages. `STRAW_DIR`
+can override the path to the Straw C++ source directory.
 
-The software requires:
-- C++ compiler (GCC/G++ 4.8 or later)
-- OpenBLAS
-- LAPACK/LAPACKE
-- libcurl
-- zlib
-- straw library (place in `~/straw` or modify build script)
+## A/B orientation
 
-### Platform-Specific Build Instructions
-
-#### Linux
-```bash
-# Make the script executable
-chmod +x build_linux.sh
-# Run the build script
-./build_linux.sh
-```
-
-The script will automatically install required dependencies using apt-get.
-
-#### macOS
-```bash
-# Make the script executable
-chmod +x build_mac.sh
-# Run the build script
-./build_mac.sh
-```
-
-The script will use Homebrew to install required dependencies.
-
-#### Windows
-1. Install MinGW-w64 from [WinLibs](https://winlibs.com/)
-2. Add MinGW-w64 bin directory to your PATH
-3. Run the build script:
-```cmd
-build_windows.bat
-```
-
-You may need to modify the paths in `build_windows.bat` to match your MinGW-w64 installation.
+All three programs use bundled GC content with a RefSeq agreement check for
+hg19, hg38, mm9, and mm10. Suffixed genome IDs are recognized; chromosome names
+and exact nuclear sizes confirm the ID or identify an inconclusive assembly.
+`--assembly NAME` explicitly overrides detection, subject to size validation. GC is exact for 100 bp-aligned
+resolutions; auto mode uses exact RefSeq coverage otherwise. `-p FILE` /
+`--phasing-track FILE` supplies a custom activity bedGraph. All reference controls
+are forwarded to both rescue phases. Unresolved/conflicting signs are left
+unchanged and recorded in `.orientation.tsv` reports, including in quiet mode.
+See [the shared phasing documentation](../README.md#ab-sign-orientation-at-any-resolution)
+for options, confidence thresholds, output reports, and biological limitations.
+Y and mitochondrial entries are retained, subject to adequate evidence.
 
 ## Usage
 
@@ -109,9 +86,11 @@ For each chromosome, rescue mode calculates EV1 at 50 kb and EV1-EV10 at the
 requested resolution. It expands each 50 kb call onto the requested-resolution
 bins, then compares each high-resolution EV, in EV order, with that expanded
 reference. The first vector whose
-absolute Pearson correlation is greater than 0.8 is selected; a negative match is
-sign-aligned to the 50 kb reference. If no vector passes, the best finite match
-is used and marked `fallback_best` in the report.
+absolute Pearson correlation is greater than 0.8 is selected. The final A/B sign
+requires adequate direct biological evidence; weak or conflicting evidence stays
+unresolved. `applied_sign` and
+`orientation_source` in the rescue TSV make this decision explicit. If no vector
+passes, the best finite match is used and marked `fallback_best` in the report.
 If a chromosome is too sparse to calculate a 50 kb reference (for example,
 mitochondrial DNA), rescue retains high-resolution EV1 and reports
 `no_low_resolution_reference`; its low-resolution reference section is zero-filled.
@@ -158,9 +137,15 @@ outputs and logs.
 ./LanChr.exe [options] <hicfile> <chromosome> <outbase> <resolution> [nv]
 ```
 
-It defaults to SCALE, o/e, and one requested eigenvector. The solver retains two
-additional internal Ritz vectors for convergence, but only `nv` vectors are
-written. Eigenvalues, gaps, both conditioning ratios, and the tolerance-scaled
+It defaults to SCALE, o/e, and one requested eigenvector. The solver retains up to two
+additional internal Ritz vectors for diagnostics, but only `nv` vectors are
+written. Exact rank exhaustion is handled without dividing by a zero residual;
+unavailable extra eigenvalues are zero. When fewer independent
+directions are available, the worker retries with fewer requested vectors.
+Unavailable output vectors are zero-filled with a warning, and
+`computed_eigenvectors` in the worker diagnostics records the available count.
+Rescue reports `no_high_resolution_eigenvector` when no usable vector exists.
+Eigenvalues, gaps, both conditioning ratios, and the tolerance-scaled
 relative-error estimate are written to `<outbase>.eigenvalues.tsv`.
 
 ### Genome-Wide Analysis (GWev.exe)

@@ -1,75 +1,13 @@
 @echo off
-setlocal enabledelayedexpansion
-
-echo 🔧 Setting up build environment...
-
-REM Check if MinGW-w64 is installed and in PATH
-where g++ >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo Error: g++ not found. Please install MinGW-w64 and add it to your PATH
-    echo You can download it from: https://winlibs.com/
-    exit /b 1
-)
-
-REM Set paths - MODIFY THESE AS NEEDED
-set "MINGW_PATH=C:\mingw64"
-set "STRAW_PATH=%USERPROFILE%\straw"
-set "OPENBLAS_PATH=%MINGW_PATH%\opt\openblas"
-
-REM Check if straw exists
-if not exist "%STRAW_PATH%" (
-    echo ⚠️  Warning: straw library not found at %STRAW_PATH%
-    echo Please install straw library and place it in %STRAW_PATH%
-    echo or modify this script with the correct path
-    exit /b 1
-)
-
-echo 🔨 Building executables...
-
-REM Common compiler flags
-set "COMMON_FLAGS=-O2 -Wno-format-security -I%MINGW_PATH%\include -I%STRAW_PATH%\C++"
-set "COMMON_LIBS=-L%MINGW_PATH%\lib -lz -lzstd -lcurl -lpthread -lopenblas -llapack -llapacke"
-
-REM First compile straw library
-echo Building straw library...
-g++ %COMMON_FLAGS% -c "%STRAW_PATH%\C++\straw.cpp" -o straw.o
-
-REM Compile chromosome worker
-echo Building LanChr.exe...
-g++ %COMMON_FLAGS% -std=c++11 -o LanChr.exe ^
-    s_fLan.cpp ^
-    s_fSOLan.c ^
-    s_dthMul.c ^
-    hgFlipSign.c ^
-    straw.o ^
-    -I. ^
-    %COMMON_LIBS%
-
-REM Compile genome-wide chromosome-parallel driver
-echo Building Lan.exe...
-g++ %COMMON_FLAGS% -std=c++11 -o Lan.exe ^
-    LanGenome.cpp ^
-    straw.o ^
-    %COMMON_LIBS%
-
-REM Compile GWev.exe
-echo Building GWev.exe...
-g++ %COMMON_FLAGS% -std=c++11 -o GWev.exe ^
-    s_fGW.cpp ^
-    getGWMatrix.cpp ^
-    s_fSOLan.c ^
-    s_dthMul.c ^
-    straw.o ^
-    %COMMON_LIBS%
-
-REM Clean up object files
-del straw.o
-
-echo ✅ Build completed successfully!
-echo.
-echo You can now run:
-echo   Lan.exe    - for chromosome-parallel genome-wide analysis
-echo   LanChr.exe - internal/single-chromosome analysis
-echo   GWev.exe - for genome-wide analysis
-
-endlocal
+setlocal
+REM Run from a MinGW-w64 environment with CMake, curl, zlib, zstd,
+REM pthreads, BLAS, LAPACK and LAPACKE installed.
+REM Set STRAW_DIR to the directory containing straw.h and straw.cpp.
+set "SOURCE=%~dp0.."
+set "BUILD=%~dp0..\build"
+set "STRAW_OPTION="
+if defined STRAW_DIR set STRAW_OPTION=-DSTRAW_DIR="%STRAW_DIR%"
+cmake -S "%SOURCE%" -B "%BUILD%" -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="%~dp0." %STRAW_OPTION% %*
+if errorlevel 1 exit /b 1
+cmake --build "%BUILD%" --parallel
+exit /b %errorlevel%

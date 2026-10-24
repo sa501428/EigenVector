@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "default_assembly": "hg38",
+  "gc_bin_size": 100,
+  "assemblies": {
+    "hg19": {"organism": "Homo sapiens", "assembly_name": "GRCh37", "directory": "hg19"},
+    "hg38": {"organism": "Homo sapiens", "assembly_name": "GRCh38", "directory": "hg38"},
+    "mm9": {"organism": "Mus musculus", "assembly_name": "NCBI37", "directory": "mm9"},
+    "mm10": {"organism": "Mus musculus", "assembly_name": "GRCm38", "directory": "mm10"}
+  },
+  "solver_integration": "native GC/RefSeq phasing; genome ID substring detection with confirmation/fallback by canonical nuclear chromosome sizes"
+}

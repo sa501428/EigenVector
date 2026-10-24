@@ -1,0 +1,106 @@
+{
+  "hg19": {
+    "chrom_sizes": {
+      "bytes": 1971,
+      "etag": "\"7b3-464a295d3ae00\"",
+      "last_modified": "Sun, 08 Mar 2009 21:56:08 GMT",
+      "retrieved_at_utc": "2026-10-24T03:25:23.915848+00:00",
+      "sha256": "b404927655a4aada254ea94ad4da0c8901ed0737e67a0dcabedf673354b1f505",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.chrom.sizes"
+    },
+    "refseq": {
+      "bytes": 8043766,
+      "etag": "\"7abcf6-5ad1dffebe4dc\"",
+      "last_modified": "Tue, 18 Aug 2020 02:54:02 GMT",
+      "retrieved_at_utc": "2026-10-24T03:25:25.479338+00:00",
+      "sha256": "28e7fe22cf1923a6887c7b60e6004c75987f810b8374d4d396021a34ac0410d1",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/refGene.txt.gz"
+    },
+    "sequence": {
+      "bytes": 816241703,
+      "etag": "\"30a6dc27-464a30dfd6600\"",
+      "last_modified": "Sun, 08 Mar 2009 22:29:44 GMT",
+      "retrieved_at_utc": "2026-10-24T03:37:43.958411+00:00",
+      "sha256": "797bdb4391cbe23bd30268d41d0d86676fd7b36b7f8e76797b1882d585766fa3",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.2bit"
+    }
+  },
+  "hg38": {
+    "chrom_sizes": {
+      "bytes": 11672,
+      "etag": "\"2d98-4ee54d2d9df40\"",
+      "last_modified": "Wed, 25 Dec 2013 05:06:29 GMT",
+      "retrieved_at_utc": "2026-10-24T03:25:24.312692+00:00",
+      "sha256": "e1d9152418038457a959e949d99c9caf7ae3e4f87cfbb4ffe7d8b9a54ba1202b",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.chrom.sizes"
+    },
+    "refseq": {
+      "bytes": 8668756,
+      "etag": "\"844654-5ad1d33796747\"",
+      "last_modified": "Tue, 18 Aug 2020 01:56:52 GMT",
+      "retrieved_at_utc": "2026-10-24T03:25:33.964468+00:00",
+      "sha256": "58fbc18d60bcda5fd4635e71b99dffde09d6eb67995c7f9ded3af194eb789756",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/refGene.txt.gz"
+    },
+    "sequence": {
+      "bytes": 835393456,
+      "etag": "\"31cb17b0-514f9499d2180\"",
+      "last_modified": "Thu, 30 Apr 2015 23:16:38 GMT",
+      "retrieved_at_utc": "2026-10-24T03:35:53.454429+00:00",
+      "sha256": "1f67aaa17a77b327738fe750ab37430a85dddf73c7d9189385ad1839259acec0",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.2bit"
+    }
+  },
+  "mm10": {
+    "chrom_sizes": {
+      "bytes": 1405,
+      "etag": "\"57d-4b850ea801680\"",
+      "last_modified": "Mon, 06 Feb 2012 19:46:18 GMT",
+      "retrieved_at_utc": "2026-10-24T03:35:54.314999+00:00",
+      "sha256": "55463d59f400b2c8260d100f4b521800ee773fa9711fe3f6dad9c7887db2574f",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/mm10.chrom.sizes"
+    },
+    "refseq": {
+      "bytes": 4813121,
+      "etag": "\"497141-5ad1f6fec65f8\"",
+      "last_modified": "Tue, 18 Aug 2020 04:36:56 GMT",
+      "retrieved_at_utc": "2026-10-24T03:35:55.902395+00:00",
+      "sha256": "fab8ea8282ea60cf6d9bd17ac3ef2c91bbf3abd47c3ca7c0054b3196a7276fa1",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm10/database/refGene.txt.gz"
+    },
+    "sequence": {
+      "bytes": 714784109,
+      "etag": "\"2a9abd6d-4b8644897f040\"",
+      "last_modified": "Tue, 07 Feb 2012 18:52:41 GMT",
+      "retrieved_at_utc": "2026-10-24T03:37:17.988943+00:00",
+      "sha256": "4de06ca0bfca5417ae3782c09cf2caf7afc97c190172f60dc07b783f1bc6f39d",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/mm10.2bit"
+    }
+  },
+  "mm9": {
+    "chrom_sizes": {
+      "bytes": 584,
+      "etag": "\"248-435a4e82cc740\"",
+      "last_modified": "Thu, 19 Jul 2007 21:58:13 GMT",
+      "retrieved_at_utc": "2026-10-24T03:25:34.378259+00:00",
+      "sha256": "5737a0a2a5eb712bba0e33565e8d6f2c68c9b89bcfa992dc22da0c8def5e8dce",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm9/bigZips/mm9.chrom.sizes"
+    },
+    "refseq": {
+      "bytes": 4813469,
+      "etag": "\"49729d-5ad79a68d8886\"",
+      "last_modified": "Sat, 22 Aug 2020 16:14:40 GMT",
+      "retrieved_at_utc": "2026-10-24T03:25:35.589482+00:00",
+      "sha256": "7eb239607afa72581e1eebb9c90156e8d83d871953118357b93d39df88208ac4",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm9/database/refGene.txt.gz"
+    },
+    "sequence": {
+      "bytes": 712923274,
+      "etag": "\"2a7e588a-435cbedcb4ec0\"",
+      "last_modified": "Sat, 21 Jul 2007 20:31:31 GMT",
+      "retrieved_at_utc": "2026-10-24T03:36:40.641400+00:00",
+      "sha256": "27c4d3d0f35b8c04ddf9a6e9c658dc4b0c5f2a9ac91188105f4aae5dbae34439",
+      "url": "https://hgdownload.soe.ucsc.edu/goldenPath/mm9/bigZips/mm9.2bit"
+    }
+  }
+}

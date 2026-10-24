@@ -4,6 +4,9 @@
 #include <math.h>
 #include <sys/timeb.h>
 #include <time.h>
+#include <limits.h>
+#include "../common/Arguments.h"
+#include <iostream>
 
 int bestEigen(long m,int *i,int *j,double *x,int *N,double *l1,double *l2,double *a1,double *a2,double *ev,double *er,double tol,int maxiter,int threads);
 
@@ -16,7 +19,7 @@ static void usage(const char *argv0)
 }
 
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
 	struct timeb t0,t1;
 
         double tol=1.0e-6;
@@ -24,7 +27,7 @@ int main(int argc, char *argv[]) {
         int threads = 1;
         int verb = 1;
         int s=-1;
-        long m1=1e9;
+        long m1=1000000;
         int opt;
 
         while ((opt = getopt(argc, argv, "m:t:I:T:s:v:h")) != -1) {
@@ -33,16 +36,16 @@ int main(int argc, char *argv[]) {
                                         tol = atof(optarg);
                                         break;
                                 case 'I':
-                                        maxiter=atoi(optarg);
+                                        maxiter=possum::positiveInt(optarg);
                                         break;
                                 case 'm':
-                                        m1=atoi(optarg);
+                                        m1=atol(optarg);
                                         break;
                                 case 's':
-                                        s=atoi(optarg);
+                                        s=possum::positiveInt(optarg);
                                         break;
                                 case 'T':
-                                        threads=atoi(optarg);
+                                        threads=possum::positiveInt(optarg);
                                         break;
                                 case 'v':
                                         verb=atoi(optarg);
@@ -75,9 +78,13 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
   else if (verb) printf(" and writing to %s\n", argv[optind-1]);
-  
-  int binsize = atoi(argv[optind++]);
 
+  int binsize = possum::positiveInt(argv[optind++]);
+
+  if (binsize <= 0 || m1 <= 0 || threads <= 0 || maxiter <= 0 || !isfinite(tol) || tol <= 0) {
+    fprintf(stderr,"Resolution, record capacity, threads, iterations and tolerance must be positive\n");
+    return EXIT_FAILURE;
+  }
   long m,m0,p;
   int *i,*j;
   double *x;
@@ -97,13 +104,18 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,"Failed to allocate %ld bytes. Exiting\n",m1*sizeof(double));
     exit(EXIT_FAILURE);
   }
-  m = 0; 
+  m = 0;
   m0 = m1;
   ftime(&t0);
-  while(fscanf(fin,"%d %d %lg",&i[m],&j[m],&x[m]) == 3) {
-    i[m] /= binsize;	
-    j[m] /= binsize;	
-    if (isnan(x[m])) x[m] = 0;
+  int fields;
+  while((fields=fscanf(fin,"%d %d %lg",&i[m],&j[m],&x[m])) == 3) {
+    if (i[m] < 0 || j[m] < 0 || (s > 0 && (i[m] >= s || j[m] >= s))) {
+      fprintf(stderr,"Contact coordinate outside chromosome\n");
+      return EXIT_FAILURE;
+    }
+    i[m] /= binsize;
+    j[m] /= binsize;
+    if (!isfinite(x[m])) x[m] = 0;
     m++;
     if (m == m1) {
       m1 += m0;
@@ -124,6 +136,10 @@ int main(int argc, char *argv[]) {
       }
     }
   }
+  if (fields != EOF) {
+    fprintf(stderr,"Malformed contact record\n");
+    return EXIT_FAILURE;
+  }
   ftime(&t1);
   fclose(fin);
   if (verb) {
@@ -135,7 +151,7 @@ int main(int argc, char *argv[]) {
   if (s > 0) k = (int) ceil(((double) s)/binsize);
   else {
   	k = 0;
-  	for (p=0; p<m;p++) if (j[p] > k) k=j[p];
+    for (p=0; p<m;p++) { if (j[p] > k) k=j[p]; if (i[p] > k) k=i[p]; }
   	k++;
   }
 
@@ -168,7 +184,9 @@ int main(int argc, char *argv[]) {
           else fprintf(fout,"%20s\n","NaN");
   }
   fclose(fout);
-  return(iter);
+  free(i); free(j); free(x); free(a1); free(a2); free(ev);
+  return EXIT_SUCCESS;
+} catch (const std::exception &error) {
+  std::cerr << "Error: " << error.what() << std::endl;
+  return EXIT_FAILURE;
 }
-
-  

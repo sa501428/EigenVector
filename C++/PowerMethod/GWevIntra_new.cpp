@@ -5,21 +5,25 @@
 #include <time.h>
 #include <cmath>
 #include <unistd.h>
+#include <getopt.h>
+#include "../common/CompartmentOrientation.h"
+#include "../common/Arguments.h"
 using namespace std;
 
 int bestEigen(long m,int *i,int *j,double *x,int *N,double *l1,double *l2,double *a1,double *a2,double *ev,double *er,double tol,int maxiter,int threads);
 
-int flipSign(const char *genome, double *x, int n, char *chr, int binsize);
+
 
 static void usage(const char *argv0)
 {
   fprintf(stderr, "Usage: %s [-o observed][-t tol][-I max_iterations][-n normalization][-T threads][-v verbose] <hicfile> <outfile> <resolution> \n", argv0);
   fprintf(stderr, "  <hicfile>: hic file\n");
   fprintf(stderr, "  <outfile>: eigenvectors output file\n");
-  fprintf(stderr, "  <resolution>: resolution in bp\n");
+  fprintf(stderr, "  <resolution>: resolution in bp\n  -p, --phasing-track FILE: activity bedGraph (higher = A)\n");
+  possum::phasingUsage();
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
         string norm("NONE");
         string unit("BP");
         ifstream fin;
@@ -31,11 +35,20 @@ int main(int argc, char *argv[]) {
         int verb = 1;
 	string ob("oe");
         int opt;
+	string phasingTrack;
+    possum::PhasingOptions phasingOptions;
 
 	clock_gettime(CLOCK_REALTIME,&st);
 
-	while ((opt = getopt(argc, argv, "o:t:I:T:n:v:h")) != -1) {
-        	switch (opt) {
+    static option longOptions[] = {
+        POSSUM_PHASING_LONG_OPTIONS
+        {"phasing-track", required_argument, NULL, 'p'},
+        {NULL, 0, NULL, 0}
+    };
+	while ((opt = getopt_long(argc, argv, "p:o:t:I:T:n:v:h", longOptions, NULL)) != -1) {
+        if (phasingOptions.parse(opt,optarg)) continue;
+        switch (opt) {
+                case 'p': phasingTrack = optarg; break;
                                 case 'o':
                                         if (strcmp(optarg,"observed") == 0) ob = "observed";
 					else {
@@ -47,13 +60,13 @@ int main(int argc, char *argv[]) {
                                         tol = atof(optarg);
                                         break;
                                 case 'I':
-                                        maxiter=atoi(optarg);
+                                        maxiter=possum::positiveInt(optarg);
                                         break;
                                 case 'n':
                                         norm=optarg;
                                         break;
                                 case 'T':
-                                        threads=atoi(optarg);
+                                        threads=possum::positiveInt(optarg);
                                         break;
                                 case 'v':
                                         verb=atoi(optarg);
@@ -73,7 +86,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	string fname = argv[optind++];
-       fin.open(fname, fstream::in);
+       fin.open(fname, ios::in | ios::binary);
         if (fin.is_open()) {
                 if (verb) printf("Reading hic file from %s\n", argv[optind-1]);
         }
@@ -89,7 +102,9 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	  }
 	else if (verb) printf("Writing eigenvectors to %s\n\n", argv[optind-1]);
-	int binsize = atoi(argv[optind++]);
+	int binsize = possum::positiveInt(argv[optind++]);
+    if (binsize <= 0 || threads <= 0 || maxiter <= 0 || !std::isfinite(tol) || tol <= 0)
+        throw std::runtime_error("resolution, threads, iterations, and tolerance must be positive");
 	fprintf(fout,"track type=wiggle_0\n");
 
 	int *ii;
@@ -114,11 +129,10 @@ int main(int argc, char *argv[]) {
 
     chromosomeMap = readHeader(fin, master, genomeID, numChromosomes, version, nviPosition, nviLength);
     fin.close();
+    if (chromosomeMap.empty()) throw std::runtime_error("Hi-C file has no chromosomes");
 
-	if (genomeID != hg19 && genomeID != hg38) if (verb) {
-		cout << genomeID;
-		cout << " is not currently supported; no sign flip will be attempted!" << endl << endl;
-	}
+    possum::CompartmentOrientation orientation(genomeID, phasingTrack, phasingOptions, possum::phasingChromosomes(chromosomeMap));
+    orientation.setReport(std::string(out_name) + ".orientation.tsv");
 
 	vector<contactRecord> records;
 	int iter0 = 0;
@@ -127,19 +141,17 @@ int main(int argc, char *argv[]) {
 	for (map<string,chromosome>::iterator itr =  chromosomeMap.begin(); itr !=  chromosomeMap.end(); ++itr) {
 		string chrom = itr->second.name;
 		char *chr = const_cast<char*> (chrom.c_str());
-		if (strcmp(chr,"Y")==0 || strcmp(chr,"M")==0 || strcmp(chr,"MT")==0) continue;
-		if (strcmp(chr,"chrY")==0 || strcmp(chr,"chrM")==0 || strcmp(chr,"chrMT")==0) continue;
 		if (strcmp(chr,"ALL")==0 || strcmp(chr,"All")==0 || strcmp(chr,"all")==0) continue;
 		clock_gettime(CLOCK_REALTIME,&t0);
         	records = straw(ob, norm, fname, chrom, chrom, unit, binsize);
-		if (records.size() == 0) exit(EXIT_FAILURE);
+
         	m = records.size();
 		ii = (int *) malloc(m*sizeof(int));
 		jj = (int *) malloc(m*sizeof(int));
 		xx = (double *) malloc(m*sizeof(double));
 		p=0;
                 for (q=0; q<m; q++) {
-                        if (!std::isnan((double) records[q].counts)) {
+                        if (std::isfinite((double) records[q].counts) && records[q].binX >= 0 && records[q].binY >= 0) {
                 		ii[p] = records[q].binX/binsize;
                         	jj[p] = records[q].binY/binsize;
                         	xx[p] = (double) records[q].counts;
@@ -153,7 +165,7 @@ int main(int argc, char *argv[]) {
 		m = p;
 		for (p=0; p<m;p++) if (jj[p] == ii[p]) xx[p] *= 0.5;
 
-		int N = (int) ceil(itr->second.length/((double) binsize));
+		int N = possum::binCount(itr->second.length, binsize);
 
 		double l1,l2,er;
 		double *a1 = (double *) malloc(N*sizeof(double));
@@ -178,22 +190,21 @@ int main(int argc, char *argv[]) {
 			printf("                           -------------------- \n");
 		}
 
-		fprintf(fout,"fixedStep ");
-                char *chr1 = (char *) malloc((strlen(chr)+4)*sizeof(char));
-                if (!strstr(chr,"chr")) strcpy(chr1,"chr");
-                else strcpy(chr1,"");
-                strcat(chr1,chr);
-                if (strcmp(chr1,"chrMT") == 0)  strcpy(chr1,"chrM");
-                fprintf(fout,"chrom=%s ",chr1);
-                fprintf(fout,"start=1 step=%d span=%d\n",binsize,binsize);
-		char *genome1 = const_cast<char*> (genomeID.c_str());
-		if (100000 % binsize == 0) int junk = flipSign(genome1,ev,N,chr1,binsize);
-                for (int j=0;j< N;j++) {
-			if (j == N-1) fprintf(fout,"fixedStep chrom=%s start=%d step=%lld span=%lld\n",chr1,j*binsize+1,static_cast<long long>(itr->second.length % binsize), static_cast<long long>(itr->second.length % binsize) );
-			if (!std::isnan(ev[j])) fprintf(fout,"%f\n",ev[j]);
-			else fprintf(fout,"%s\n","0");
-//			else fprintf(fout,"%s\n","NaN");
-		}
+        std::string displayChr = possum::displayChromosome(chrom);
+        orientation.orient(ev, N, chrom, binsize, verb, 1, itr->second.length);
+        fprintf(fout,"fixedStep chrom=%s start=1 step=%d span=%d\n", displayChr.c_str(), binsize, binsize);
+        for (int j=0; j<N; ++j) {
+            // A partial terminal bin needs its actual span; exact multiples
+            // retain the original section (never a zero step/span).
+            long long remainder = itr->second.length % binsize;
+            if (j == N-1 && remainder > 0)
+                fprintf(fout,"fixedStep chrom=%s start=%lld step=%d span=%lld\n",
+                        displayChr.c_str(), static_cast<long long>(j)*binsize+1, binsize, remainder);
+            fprintf(fout,"%.17g\n", std::isfinite(ev[j]) ? ev[j] : 0.0);
+        }
+        free(a1);
+        free(a2);
+        free(ev);
 
 		free(ii);
 		free(jj);
@@ -203,4 +214,7 @@ int main(int argc, char *argv[]) {
 	clock_gettime(CLOCK_REALTIME,&en);
 	if (verb) printf("\n**************    all together took %10.3f seconds\n",((double) (en.tv_sec - st.tv_sec)) + ((double) (en.tv_nsec - st.tv_nsec))/1e9);
 	return(0);
+} catch (const std::exception &error) {
+    std::cerr << "Error: " << error.what() << std::endl;
+    return EXIT_FAILURE;
 }

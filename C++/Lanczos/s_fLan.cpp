@@ -7,11 +7,14 @@
 #include <time.h>
 #include <cmath>
 #include <unistd.h>
+#include <getopt.h>
+#include "../common/CompartmentOrientation.h"
+#include "../common/Arguments.h"
 using namespace std;
 
 int SOLan(long m,unsigned int *i,unsigned int *j,float *x,unsigned int *N,double *r,int nv,double *lam,double **ev,double *er,double tol,double eps,int maxiter,int threads);
 
-int flipSign(const char *genome, double *x, int n, char *chr, int binsize);
+
 
 static void usage(const char *argv0)
 {
@@ -26,16 +29,17 @@ static void usage(const char *argv0)
   fprintf(stderr, "  -C           Disable low-coverage row/column filtering\n");
   fprintf(stderr, "  -T <int>     Set number of threads (default: 1)\n");
   fprintf(stderr, "  -v <int>     Set verbosity level (default: 1)\n");
-  fprintf(stderr, "  -h           Show this help message\n\n");
+  fprintf(stderr, "  -p, --phasing-track FILE\n               Activity bedGraph (higher values = A)\n  -h           Show this help message\n\n");
   fprintf(stderr, "Required arguments:\n");
   fprintf(stderr, "  <hicfile>     Path to .hic file\n");
   fprintf(stderr, "  <chromosome>  Chromosome name (e.g., chr1)\n");
   fprintf(stderr, "  <outbase>     Base name for output eigenvector files\n");
   fprintf(stderr, "  <resolution>  Resolution in base pairs\n");
   fprintf(stderr, "  [nv]         Number of eigenvectors to write (optional, default: 1)\n");
+  possum::phasingUsage();
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
 	string norm("SCALE");
 	string unit("BP");
 	string ob("oe");
@@ -51,9 +55,18 @@ int main(int argc, char *argv[]) {
 	bool coverageFilter = true;
 	unsigned int N;
 	int opt;
+	string phasingTrack;
+    possum::PhasingOptions phasingOptions;
 
-	while ((opt = getopt(argc, argv, "ot:e:I:T:n:c:Cv:h")) != -1) {
-		switch (opt) {
+    static option longOptions[] = {
+        POSSUM_PHASING_LONG_OPTIONS
+        {"phasing-track", required_argument, NULL, 'p'},
+        {NULL, 0, NULL, 0}
+    };
+	while ((opt = getopt_long(argc, argv, "p:ot:e:I:T:n:c:Cv:h", longOptions, NULL)) != -1) {
+		if (phasingOptions.parse(opt,optarg)) continue;
+        switch (opt) {
+                case 'p': phasingTrack = optarg; break;
 				case 'o':
 					ob = "observed";
 					break;
@@ -64,7 +77,7 @@ int main(int argc, char *argv[]) {
 					eps = atof(optarg);
 					break;
 				case 'I':
-					maxiter=atoi(optarg);
+					maxiter=possum::positiveInt(optarg);
 					break;
 				case 'n':
 					norm=optarg;
@@ -77,7 +90,7 @@ int main(int argc, char *argv[]) {
 					coverageFilter=false;
 					break;
 				case 'T':
-					threads=atoi(optarg);
+					threads=possum::positiveInt(optarg);
 					break;
 				case 'v':
 					verb=atoi(optarg);
@@ -97,7 +110,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	string fname = argv[optind++];
-	fin.open(fname, fstream::in);
+	fin.open(fname, ios::in | ios::binary);
 	if (fin.is_open()) {
 		if (verb) printf("Reading hic file from %s\n", argv[optind-1]);
 	}
@@ -109,9 +122,11 @@ int main(int argc, char *argv[]) {
 	string chrom(argv[optind++]);
 	char *out_name = argv[optind++];
 	if (verb) printf("Eigenvectors base name is: %s\n", out_name);
-	int binsize = atoi(argv[optind++]);
-	if (argc > optind) nv=atoi(argv[optind++]);
-	if (binsize <= 0 || nv <= 0 || maxiter <= nv+2 || threads <= 0) {
+	int binsize = possum::positiveInt(argv[optind++]);
+	if (argc > optind) nv=possum::positiveInt(argv[optind++]);
+	if (binsize <= 0 || nv <= 0 || nv > maxiter-3 || threads <= 0 ||
+        !isfinite(tol) || tol <= 0 || !isfinite(eps) || eps <= 0 ||
+        !isfinite(coverageZCutoff)) {
 		fprintf(stderr, "Error: resolution, eigenvector count, and threads must be positive; max iterations must exceed nv+2\n");
 		exit(EXIT_FAILURE);
 	}
@@ -128,19 +143,20 @@ int main(int argc, char *argv[]) {
     int64_t nviLength = 0LL;
 	chromosomeMap = readHeader(fin, master, genomeID, numChromosomes, version, nviPosition, nviLength);
 	map<string,chromosome>::iterator itr0 = chromosomeMap.find(chrom);
-	if (itr0 != chromosomeMap.end()) N = (int) ceil(itr0->second.length/((double) binsize));
+    if (itr0 == chromosomeMap.end()) {
+        for (itr0 = chromosomeMap.begin(); itr0 != chromosomeMap.end(); ++itr0)
+            if (possum::chromosomeKey(itr0->first) == possum::chromosomeKey(chrom)) break;
+    }
+    if (itr0 != chromosomeMap.end()) chrom = itr0->first;
+	if (itr0 != chromosomeMap.end()) N = possum::binCount(itr0->second.length, binsize);
 	else {
 		cout << "chromosome " << chrom << " is not found" << endl;
 		exit(1);
 	}
 	fin.close();
 
-        string hg19("hg19");
-        string hg38("hg38");
-        if (genomeID != hg19 && genomeID != hg38) if (verb) {
-                cout << genomeID;
-                cout << " is not currently supported; no sign flip will be attempted!" << endl << endl;
-        }
+    possum::CompartmentOrientation orientation(genomeID, phasingTrack, phasingOptions, possum::phasingChromosomes(chromosomeMap));
+    orientation.setReport(std::string(out_name) + ".orientation.tsv");
 
 	time(&t0);
 	vector<contactRecord> records = straw(ob, norm, fname, chrom, chrom, unit, binsize);
@@ -149,7 +165,7 @@ int main(int argc, char *argv[]) {
 	for (long k=0; k<inputNonZero; k++) {
 		unsigned int row = records[k].binX/binsize;
 		unsigned int column = records[k].binY/binsize;
-		if (row >= N || column >= N || !isfinite(records[k].counts) || records[k].counts == 0) continue;
+		if (records[k].binX < 0 || records[k].binY < 0 || row >= N || column >= N || !isfinite(records[k].counts) || records[k].counts == 0) continue;
 		rowNonZero[row]++;
 		if (column != row) rowNonZero[column]++;
 	}
@@ -194,7 +210,8 @@ int main(int argc, char *argv[]) {
 	for (long k=0; k<inputNonZero; k++) {
 		unsigned int row = records[k].binX/binsize;
 		unsigned int column = records[k].binY/binsize;
-		if (row >= N || column >= N || !retainBin[row] || !retainBin[column]) continue;
+		if (records[k].binX < 0 || records[k].binY < 0 || row >= N || column >= N ||
+            !isfinite(records[k].counts) || records[k].counts == 0 || !retainBin[row] || !retainBin[column]) continue;
 		i[nonZer] = row;
 		j[nonZer] = column;
 		x[nonZer] = (float) records[k].counts;
@@ -218,7 +235,26 @@ int main(int argc, char *argv[]) {
 
 	time(&t0);
 	int iter;
-	iter = SOLan( m,i,j,x,&N,r,nv,lam,ev,&er,tol,eps,maxiter,threads);
+	int computedNv = nv;
+    for (;;) {
+        iter = SOLan(m,i,j,x,&N,r,computedNv,lam,ev,&er,tol,eps,maxiter,threads);
+        if (iter != 300001 || computedNv == 1) break;
+        --computedNv;
+    }
+    if (iter == 300001) {
+        computedNv = 0;
+        iter = 0;
+        er = NAN;
+        for (int v=0; v<nv+2; ++v) lam[v] = NAN;
+    } else {
+        for (int v=computedNv+2; v<nv+2; ++v) lam[v] = NAN;
+    }
+    if (computedNv < nv) {
+        fprintf(stderr,"Warning: %s computed %d of %d requested eigenvectors; unavailable vectors are zero-filled\n",
+                chrom.c_str(),computedNv,nv);
+        for (int v=computedNv; v<nv+2; ++v)
+            for (unsigned int bin=0; bin<N; ++bin) ev[v][bin] = NAN;
+    }
 	time(&t1);
 	if (iter > 90000) {
 		printf("return code is %d\n",iter);
@@ -230,16 +266,8 @@ int main(int argc, char *argv[]) {
 		printf("iterations took %ld seconds\n",t1-t0);
 	}
 
-        char *chr = const_cast<char*> (chrom.c_str());
-        char *chr1 = (char *) malloc((strlen(chr)+4)*sizeof(char));
-        if (!strstr(chr,"chr")) strcpy(chr1,"chr");
-        else strcpy(chr1,"");
-        strcat(chr1,chr);
-        if (strcmp(chr1,"chrMT") == 0)  strcpy(chr1,"chrM");
-       	char *genome1 = const_cast<char*> (genomeID.c_str());
-	        if (strcmp(chr1,"chrY")!=0 && strcmp(chr1,"chrM")!=0 && (100000 % binsize == 0)) {
-		for (p=0;p<nv+2;p++) flipSign(genome1,ev[p],N,chr1,binsize);
-	}
+    for (int v=0; v<nv; ++v)
+        orientation.orient(ev[v], N, chrom, binsize, verb, v+1, itr0->second.length);
 
 	for (int j0=0;j0<nv+2;j0++) printf("%lg ",lam[j0]);
 	printf("\n");
@@ -257,7 +285,7 @@ int main(int argc, char *argv[]) {
 		"\tlambda_k_over_gap_k\tlambda_k_plus_1_over_gap_k_plus_1\tmin_ratio"
 		"\ttolerance\testimated_relative_error_first_k\tcoverage_filter_enabled"
 		"\tcoverage_z_cutoff\tcoverage_mean_log1p_nonzero\tcoverage_sd_log1p_nonzero"
-		"\tcoverage_min_nonzero_entries\tcoverage_removed_bins\tcoverage_retained_bins\n");
+		"\tcoverage_min_nonzero_entries\tcoverage_removed_bins\tcoverage_retained_bins\tcomputed_eigenvectors\n");
 	for (int j0=0;j0<nv;j0++) {
 		double gap_k = lam[j0] - lam[j0+1];
 		double gap_k_plus_1 = lam[j0+1] - lam[j0+2];
@@ -267,11 +295,11 @@ int main(int argc, char *argv[]) {
 		double relative_error = tol * min_ratio;
 		fprintf(eigenvalue_out,
 			"%d\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g"
-			"\t%d\t%.17g\t%.17g\t%.17g\t%.17g\t%ld\t%ld\n",
+			"\t%d\t%.17g\t%.17g\t%.17g\t%.17g\t%ld\t%ld\t%d\n",
 			j0+1, lam[j0], lam[j0+1], lam[j0+2], gap_k, gap_k_plus_1,
 			ratio_k, ratio_k_plus_1, min_ratio, tol, relative_error,
 			coverageFilter ? 1 : 0, coverageZCutoff, coverageMean, coverageSd,
-			coverageMinimumEntries, removedBins, retainedBins);
+			coverageMinimumEntries, removedBins, retainedBins, computedNv);
 	}
 	fclose(eigenvalue_out);
 	free(eigenvalue_name);
@@ -279,7 +307,7 @@ int main(int argc, char *argv[]) {
 	// SOLan uses nv+2 Ritz vectors internally, but only the requested nv vectors
 	// are part of the public output.
 	for (int j0=0;j0<nv;j0++) {
-		char *curout = (char *) malloc((10+strlen(out_name))*sizeof(char));
+		char *curout = (char *) malloc((32+strlen(out_name))*sizeof(char));
 		char *temp = (char *) malloc(50);
 		snprintf(temp, 50, ".Ev%d.wig", j0+1);
 		strcpy(curout,out_name);
@@ -294,28 +322,26 @@ int main(int argc, char *argv[]) {
                 fprintf(fout, "track type=wiggle_0 name=\"Eigenvector %d\" description=\"Eigenvector %d for %s\"\n", 
                         j0+1, j0+1, chrom.c_str());
 
-                // Convert chromosome name to standard format
-                char *chr = const_cast<char*> (chrom.c_str());
-                char *chr1 = (char *) malloc((strlen(chr)+4)*sizeof(char));
-                if (!strstr(chr,"chr")) strcpy(chr1,"chr");
-                else strcpy(chr1,"");
-                strcat(chr1,chr);
-                if (strcmp(chr1,"chrMT") == 0) strcpy(chr1,"chrM");
+                std::string displayChr = possum::displayChromosome(chrom);
+                const char *chr1 = displayChr.c_str();
 
                 // Write all bins with uniform size
                 fprintf(fout, "fixedStep chrom=%s start=1 step=%d span=%d\n", chr1, binsize, binsize);
                 for (p=0; p<N; p++) {
                         if (!isnan(ev[j0][p])) {
-                                fprintf(fout,"%lg\n", ev[j0][p]);
+                                fprintf(fout,"%.17g\n", ev[j0][p]);
                         } else {
                                 fprintf(fout,"0\n");
                         }
                 }
 
-                free(chr1);
+
 		fclose(fout);
 		free(curout);
 		free(temp);
 	}
 	return(EXIT_SUCCESS);
+} catch (const std::exception &error) {
+    std::cerr << "Error: " << error.what() << std::endl;
+    return EXIT_FAILURE;
 }
