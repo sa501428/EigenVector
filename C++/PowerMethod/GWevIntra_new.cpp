@@ -19,12 +19,13 @@ static void usage(const char *argv0)
   fprintf(stderr, "Usage: %s [-o observed][-t tol][-I max_iterations][-n normalization][-T threads][-v verbose] <hicfile> <outfile> <resolution> \n", argv0);
   fprintf(stderr, "  <hicfile>: hic file\n");
   fprintf(stderr, "  <outfile>: eigenvectors output file\n");
+  fprintf(stderr, "  -n normalization: normalization method (default: SCALE)\n");
   fprintf(stderr, "  <resolution>: resolution in bp\n  -p, --phasing-track FILE: activity bedGraph (higher = A)\n");
   possum::phasingUsage();
 }
 
 int main(int argc, char *argv[]) try {
-        string norm("NONE");
+        string norm("SCALE");
         string unit("BP");
         ifstream fin;
         struct timespec t0,t1,st,en;

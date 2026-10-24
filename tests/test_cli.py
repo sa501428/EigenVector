@@ -128,7 +128,7 @@ def main():
                 sections = wig(base.with_suffix('.Ev1.wig'))
                 oriented(next(iter(sections.values())), resolution)
             power = root/'genome_power.wig'
-            run([build/'GWevIntra.exe', '-v', 0, '-o', 'observed', '-p', track, hic, power, resolution])
+            run([build/'GWevIntra.exe', '-n', 'NONE', '-v', 0, '-o', 'observed', '-p', track, hic, power, resolution])
             sections = wig(power)
             assert set(sections) == {'chr1', 'chrY', 'chrM', 'chrUn_test'}
             for c, length in chroms:

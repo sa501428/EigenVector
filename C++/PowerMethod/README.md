@@ -23,6 +23,11 @@ To produce eigenvector for every chromosome in the hic file in the wiggle (wig) 
 
 Run `./GWevIntra.exe` to see the usage  
 
+`GWevIntra.exe` defaults to SCALE normalization and observed/expected matrices.
+For example, `./GWevIntra.exe sample.hic compartments.wig 5000` computes
+chromosome-specific eigenvectors at 5 kb. Use `-n NONE` for unnormalized input
+or `-n NAME` to select another normalization available in the Hi-C file.
+
 **A/B orientation:** Both executables use the shared orientation implementation
 at any positive resolution supported by the Hi-C file, including 500 bp and 1 kb.
 The default uses bundled GC content with a RefSeq agreement check for hg19, hg38,

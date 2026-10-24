@@ -114,7 +114,7 @@ def main():
             run([build/'LanChr.exe','-v',0,'-o','-n','NONE',hic,'1',base,7000])
             audit(str(base)+'.orientation.tsv',wig(Path(str(base)+'.Ev1.wig'))['chr1'],assembly,7000)
             genome = root/f'{assembly}.genome.wig'
-            run([build/'GWevIntra.exe','-v',0,'-o','observed',hic,genome,7000])
+            run([build/'GWevIntra.exe','-n','NONE','-v',0,'-o','observed',hic,genome,7000])
             audit(str(genome)+'.orientation.tsv',wig(genome)['chr1'],assembly,7000)
             base = root/f'{assembly}.driver'
             run([build/'Lan.exe','-v',0,'-o','-n','NONE',hic,base,7000])

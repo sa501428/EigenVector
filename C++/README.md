@@ -80,7 +80,8 @@ malformed required data are errors; they do not silently disable phasing.
 
 The [bundled reference documentation](../resources/compartment_phasing/README.md)
 describes source snapshots, checksums, storage format, rebuilding, and validation.
-The historical 100 kb A anchors are no longer used by the orientation helper.
+The historical hardcoded 100 kb A-anchor headers have been removed; orientation
+uses the bundled GC/RefSeq references or a user-supplied activity track.
 
 ### Default decision
 
